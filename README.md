@@ -6,7 +6,7 @@ This is the repository for the projects of the course "Advanced Machine Learning
 
 The group name is "Advanced Machines".
 The group members are:
-* Andras Geiszl (ageiszl@student.ethz.ch)
+* András Geiszl (ageiszl@student.ethz.ch)
 * Daniël Trujillo (dtrujillo@student.ethz.ch)
 * Harish Rajagopal (hrajagopal@student.ethz.ch)
 
