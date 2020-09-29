@@ -14,9 +14,9 @@ The group members are:
 ### For Contributors
 
 1. Install [Poetry](https://github.com/python-poetry/poetry)
-1. Change into the project directory
-1. Create a Python virtual environment (e.g. `conda create -n nlp python=3.8.5` or `virtualenv env`)
-1. Activate the environment (e.g. `conda activate nlp` or `source ./env/bin/activate`)
+1. Clone project and change into the project directory
+1. Create a Python virtual environment (e.g. `conda create -n aml python=3.8.5` or `virtualenv env`)
+1. Activate the environment (e.g. `conda activate aml` or `source ./env/bin/activate`)
 1. Install required dependencies
     * Development: `poetry install`
     * Deployment: `poetry install --no-dev`
