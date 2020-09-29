@@ -123,7 +123,6 @@ pip-selfcheck.json
 
 ### VisualStudioCode ###
 .vscode/*
-!.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
@@ -133,3 +132,6 @@ pip-selfcheck.json
 .history
 
 # End of https://www.gitignore.io/api/python,intellij,virtualenv,visualstudiocode
+
+## Custom rules
+!.vscode/settings.json.default
