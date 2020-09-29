@@ -1,12 +1,14 @@
 {
     "files.eol": "\n",
-    "python.autoComplete.extraPaths": ["src"],
+    "python.autoComplete.extraPaths": [
+        "src"
+    ],
     "[python]": {
+        "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
             "source.organizeImports": true
         }
     },
-    "editor.formatOnSave": true,
     "python.formatting.provider": "black",
 
     "python.linting.enabled": true,
@@ -15,13 +17,6 @@
     "python.linting.pylintArgs": [
         "--rcfile=setup.cfg"
     ],
-    "autoDocstring.docstringFormat": "numpy",
 
-    "python.analysis.extraPaths": [
-        "src"
-    ],
-    "python.analysis.typeCheckingMode": "strict",
-    "python.analysis.diagnosticSeverityOverrides": {
-        "reportMissingTypeStubs": "none"
-    }
+    "autoDocstring.docstringFormat": "numpy"
 }
