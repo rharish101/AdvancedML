@@ -324,7 +324,7 @@ python-versions = "*"
 version = "2.0.0"
 
 [[package]]
-category = "dev"
+category = "main"
 description = "Pretty-print tabular data"
 name = "tabulate"
 optional = false
@@ -396,7 +396,7 @@ python-versions = "*"
 version = "1.12.1"
 
 [metadata]
-content-hash = "81c6b0ac4fca3443541f5f911a9fdeb399b17816b76976968fddde1e458b5696"
+content-hash = "8143ce98a4c2f6486b14c9409c6717dbbd1658826ccf3a3c3b7420690026228e"
 lock-version = "1.0"
 python-versions = "~3.8.5"
 
