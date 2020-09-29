@@ -11,15 +11,15 @@
     "typestubs/**"
   ],
 
-  "typingsPath": "typings",
-  "venvPath": "C:\\tools\\Anaconda3\\envs",
-
   "pythonVersion": "3.8",
+  "stubPath": "typings",
 
   "executionEnvironments": [{
     "root": "src"
   }],
 
   "typeCheckingMode": "strict",
-  "reportMissingTypeStubs": false
+  "reportMissingTypeStubs": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownArgumentType": false
 }
