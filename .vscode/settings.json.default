@@ -10,6 +10,7 @@
         }
     },
     "python.formatting.provider": "black",
+    "python.formatting.blackArgs": ["--line-length", "100"],
 
     "python.linting.enabled": true,
     "python.linting.flake8Enabled": true,
