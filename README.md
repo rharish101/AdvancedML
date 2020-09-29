@@ -6,19 +6,25 @@ This is the repository for the projects of the course "Advanced Machine Learning
 
 The group name is "Advanced Machines".
 The group members are:
+
 * András Geiszl (ageiszl@student.ethz.ch)
 * Daniël Trujillo (dtrujillo@student.ethz.ch)
 * Harish Rajagopal (hrajagopal@student.ethz.ch)
 
 ### For Contributors
-1. Install extra dependencies for development, either globally or in a virtual environment:
-    ```sh
-    pip install -r requirements-dev.txt
-    ```
 
-2. Install pre-commit hooks from the root directory of this repository:
+1. Install [Poetry](https://github.com/python-poetry/poetry)
+1. Change into the project directory
+1. Create a Python virtual environment (e.g. `conda create -n nlp python=3.8.5` or `virtualenv env`)
+1. Activate the environment (e.g. `conda activate nlp` or `source ./env/bin/activate`)
+1. Install required dependencies
+    * Development: `poetry install`
+    * Deployment: `poetry install --no-dev`
+1. Install pre-commit hooks from the root directory of this repository:
+
     ```sh
     pre-commit install
     ```
 
-**NOTE**: If you installed the dependencies in a virtual environment, you need to be inside that environment every time you commit.
+    **NOTE**: You need to be inside the virtual environment every time you commit.
+1. Install the [Pylance language server](https://marketplace.visualstudio.com/items?itemName=ms-python.vscode-pylance) for VSCode (or if you're using a different code editor, install [Pyright](https://github.com/microsoft/pyright))

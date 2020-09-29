@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "advanced-ml"
+version = "1.0.0"
+description = "Repository for projects of the Advanced Machine Learning (252-0535-00L) offered in Autumn 2020"
+
+license = "MIT"
+authors = ["Andras Geiszl", "Daniël Trujillo", "Harish Rajagopal"]
+
+readme = "README.md"
+repository = "https://github.com/rharish101/AdvancedML"
+homepage = "https://github.com/rharish101/AdvancedML"
+
+[tool.poetry.dependencies]
+python = "~3.8.5"
+
+[tool.poetry.dev-dependencies]
+flake8 = "^3.7.9"
+isort = "^5.5.3"
+mypy = "^0.782"
+pre-commit = "^2.7.1"
+pydocstyle = "^5.1.1"
+pylint = "^2.5.0"

@@ -1,0 +1,25 @@
+{
+  "include": [
+    "src"
+  ],
+  
+  "exclude": [
+    "**/__pycache__"
+  ],
+
+  "ignore": [
+    "typestubs/**"
+  ],
+
+  "typingsPath": "typings",
+  "venvPath": "C:\\tools\\Anaconda3\\envs",
+
+  "pythonVersion": "3.8",
+
+  "executionEnvironments": [{
+    "root": "src"
+  }],
+
+  "typeCheckingMode": "strict",
+  "reportMissingTypeStubs": false
+}
