@@ -1,7 +1,6 @@
 {
     "files.eol": "\n",
     "python.autoComplete.extraPaths": ["src"],
-    "python.pythonPath": "C:\\tools\\Anaconda3\\envs\\nlp\\python.exe",
     "[python]": {
         "editor.codeActionsOnSave": {
             "source.organizeImports": true
