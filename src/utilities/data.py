@@ -1,7 +1,7 @@
 """Contains utilities for data I/O and processing."""
 
 from pathlib import Path
-from typing import Any, Tuple, Union, cast
+from typing import Any, Optional, Tuple, Union, cast
 
 import numpy
 from pandas import DataFrame
@@ -14,7 +14,7 @@ def read_csv(
     file_path: str,
     delimiter: str = ",",
     includes_header: bool = True,
-) -> Tuple[Union[CSVData, None], Union[CSVHeader, None]]:
+) -> Tuple[Optional[CSVData], Optional[CSVHeader]]:
     """Read in data from a CSV file.
 
     Parameters
