@@ -25,3 +25,6 @@ mypy = "^0.782"
 pre-commit = "^2.7.1"
 pydocstyle = "^5.1.1"
 pylint = "^2.5.0"
+
+[tool.black]
+line-length = 100
