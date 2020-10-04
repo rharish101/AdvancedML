@@ -1,7 +1,6 @@
 """The entry point for the scripts for Task 0."""
-
+import numpy as np
 from pandas import DataFrame
-from sklearn.linear_model import LinearRegression
 
 from utilities.data import create_submission_file, print_array, print_array_statistics, read_csv
 
@@ -24,9 +23,10 @@ X_test = DataFrame(csv_data_test)
 Y_train = df_train["y"]
 X_train = df_train.drop(["y", "Id"], 1)
 
-reg = LinearRegression().fit(X_train, Y_train)
+W = np.linalg.lstsq(X_train, Y_train, rcond=-1)[0]
 
-Y_test = DataFrame(reg.predict(X_test.drop("Id", 1)))
+Y_test = DataFrame(X_test.drop("Id", 1).dot(W))
+
 Y_test.insert(0, "Id", X_test["Id"])
 
 # Print preview of data
