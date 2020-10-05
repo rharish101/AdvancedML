@@ -7,7 +7,7 @@ import numpy
 from pandas import DataFrame
 from tabulate import tabulate
 
-from typings import Array2D, CSVData, CSVHeader
+from typings import Array2D, CSVData, CSVHeader, StructuredArray
 
 
 def read_csv(
@@ -33,10 +33,12 @@ def read_csv(
         containing data from the CSV file (without the header, if specified).
         The header is a tuple of the values in the first row of the CSV data
     """
+    print(f'Loading "{file_path}"...')
+
     try:
         data = cast(
-            CSVData,
-            numpy.genfromtxt(file_path, delimiter=delimiter, dtype=None, names=includes_header),
+            StructuredArray,
+            numpy.genfromtxt(file_path, delimiter=delimiter, names=includes_header),
         )
     except FileNotFoundError:
         print(
@@ -48,11 +50,13 @@ def read_csv(
     header: Union[CSVHeader, None] = None
     if data is not None:
         header = data.dtype.names
+        # Convert numpy structured array to multi-dimensional array
+        data = cast(CSVData, data.view(numpy.float).reshape(data.shape + (-1,)))
 
     return (data, header)
 
 
-def print_array(numpy_array: Array2D) -> None:
+def print_array(numpy_array: Array2D, header: CSVHeader) -> None:
     """Print a preview (first 10 rows) of a numpy array.
 
     Parameters
@@ -60,19 +64,20 @@ def print_array(numpy_array: Array2D) -> None:
     numpy_array (NDArray[(Any, Any,), Any]): A 2-dimensional numpy array to print to the
         standard output
     """
-    table = tabulate(
-        numpy_array[:10],
-        list(numpy_array.dtype.names),
-        tablefmt="github",
-    )
+    table = tabulate(numpy_array[:10, :10], list(header), tablefmt="github", floatfmt="f")
 
     print()
     print(table)
 
-    if numpy_array.shape[0] > 10:
-        print(f"{numpy_array.shape[0] - 10} more rows...")
+    more_columns_text = (
+        f" and {numpy_array.shape[1] - 10} columns" if numpy_array.shape[1] > 10 else ""
+    )
 
-    print()
+    print(
+        f"---- {numpy_array.shape[0] - 10} rows{more_columns_text} not shown ----\n"
+        if numpy_array.shape[0] > 10
+        else ""
+    )
 
 
 def print_array_statistics(numpy_array: Array2D) -> None:
@@ -82,9 +87,15 @@ def print_array_statistics(numpy_array: Array2D) -> None:
     ----------
     numpy_array (NDArray[(Any, Any,), Any]): The data to print statistics about
     """
+    data_frame = DataFrame(numpy_array)
+
     print()
-    print(DataFrame(numpy_array).describe())
-    print()
+    print(data_frame.iloc[:, :10].describe())
+    print(
+        f"---- {data_frame.shape[1] - 10} columns not shown (out of {data_frame.shape[1]}) ----"
+        if data_frame.shape[1] > 10
+        else ""
+    )
 
 
 def create_submission_file(

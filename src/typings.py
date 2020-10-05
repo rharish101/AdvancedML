@@ -6,6 +6,7 @@ from nptyping import NDArray
 
 # fmt: off
 
+StructuredArray = NDArray[(Any,), Any]  # type: ignore
 CSVData = NDArray[(Any, Any,), float]  # type: ignore
 CSVHeader = Tuple[str, ...]  # type: ignore
 Array2D = NDArray[(Any, Any,), Any]  # type: ignore
