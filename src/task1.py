@@ -24,12 +24,6 @@ TEST_DATA_PATH: Final = "X_test.csv"
 
 
 def __main(args: Namespace) -> None:
-    """Run the main program.
-
-    Arguments
-    ---------
-    args: The object containing the commandline arguments
-    """
     # Read in data
     X_train, X_header = read_csv(f"{args.data_dir}/{TRAINING_DATA_NAME}")
     Y_train, _ = read_csv(f"{args.data_dir}/{TRAINING_LABELS_NAME}")
