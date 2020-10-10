@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """The entry point for the scripts for Task 1."""
 from typing import Any, cast
 
