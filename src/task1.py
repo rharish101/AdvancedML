@@ -6,6 +6,7 @@ from typing import Any, cast
 import numpy as np
 import xgboost as xgb
 from sklearn.impute import SimpleImputer
+from sklearn.model_selection import cross_val_score
 from typing_extensions import Final
 
 from typings import CSVData, CSVHeader
@@ -49,6 +50,11 @@ def __main(args: Namespace) -> None:
     X_test = imputer.transform(X_test)
 
     model = xgb.XGBRegressor()
+    scores = cross_val_score(model, X_train, Y_train, cv=args.cross_val, scoring="r2")
+    print(f"R^2 scores are: {scores}")
+
+    # Train on the complete dataset
+    model = xgb.XGBRegressor()
     model.fit(X_train, Y_train)
     Y_pred = model.predict(X_test)
 
@@ -89,6 +95,13 @@ if __name__ == "__main__":
         type=str,
         default="dist/submission1.csv",
         help="the path by which to save the output CSV",
+    )
+    parser.add_argument(
+        "-k",
+        "--cross-val",
+        type=int,
+        default=5,
+        help="the k for k-fold cross-validation",
     )
     parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
     __main(parser.parse_args())
