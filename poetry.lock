@@ -714,8 +714,27 @@ optional = false
 python-versions = "*"
 version = "1.12.1"
 
+[[package]]
+category = "main"
+description = "XGBoost Python Package"
+name = "xgboost"
+optional = false
+python-versions = ">=3.6"
+version = "1.2.0"
+
+[package.dependencies]
+numpy = "*"
+scipy = "*"
+
+[package.extras]
+dask = ["dask", "pandas", "distributed"]
+datatable = ["datatable"]
+pandas = ["pandas"]
+plotting = ["graphviz", "matplotlib"]
+scikit-learn = ["scikit-learn"]
+
 [metadata]
-content-hash = "9764e70884b09690c4d314c66a8e77aa33761a769a38a6bdadbec038218829d8"
+content-hash = "a77c08cc42c230930b86c021f2ed1e960153098f2153c727c2faaea30331c20e"
 lock-version = "1.0"
 python-versions = "~3.8.5"
 
@@ -1192,4 +1211,10 @@ wheel = [
 ]
 wrapt = [
     {file = "wrapt-1.12.1.tar.gz", hash = "sha256:b62ffa81fb85f4332a4f609cab4ac40709470da05643a082ec1eb88e6d9b97d7"},
+]
+xgboost = [
+    {file = "xgboost-1.2.0-py3-none-macosx_10_13_x86_64.macosx_10_14_x86_64.macosx_10_15_x86_64.whl", hash = "sha256:60763bc2fa4db76a05b8267abb3c2472525dc4d0c944ef880517939f550e2c94"},
+    {file = "xgboost-1.2.0-py3-none-manylinux2010_x86_64.whl", hash = "sha256:f9f2df87c07032384ccb5bbbd1d4902fc2da927e663fb0cb722ba01f710bb6a1"},
+    {file = "xgboost-1.2.0-py3-none-win_amd64.whl", hash = "sha256:9e6c1a94b56c3907a214aa72789d088efa4d294ba5ce50f27582dd6e4a7d1701"},
+    {file = "xgboost-1.2.0.tar.gz", hash = "sha256:e5f4abcd5df6767293f31b7c58d67ea38b2689641a95b2cd8ca8935295097a36"},
 ]

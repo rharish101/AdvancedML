@@ -1,7 +1,9 @@
 """The entry point for the scripts for Task 1."""
 from typing import Any, cast
 
-import numpy
+import numpy as np
+import xgboost as xgb
+from sklearn.impute import SimpleImputer
 
 from typings import CSVData, CSVHeader
 from utilities.data import (
@@ -16,28 +18,41 @@ TASK_DATA_DIRECTORY = "data/task1"
 TRAINING_DATA_PATH = f"{TASK_DATA_DIRECTORY}/X_train.csv"
 TRAINING_LABELS_PATH = f"{TASK_DATA_DIRECTORY}/y_train.csv"
 TEST_DATA_PATH = f"{TASK_DATA_DIRECTORY}/X_test.csv"
-
 OUTPUT_FILE = "dist/submission1.csv"
 
 
 def __main():
     # Read in data
-    (training_data, training_header) = read_csv(TRAINING_DATA_PATH)
-    (training_labels, _) = read_csv(TRAINING_LABELS_PATH)
-    (test_data, _) = read_csv(TEST_DATA_PATH)
+    X_train, _ = read_csv(TRAINING_DATA_PATH)
+    Y_train, _ = read_csv(TRAINING_LABELS_PATH)
+    X_test, _ = read_csv(TEST_DATA_PATH)
 
-    if training_data is None or training_labels is None or test_data is None:
-        print("There was a problem with reading CSV data. Exiting...")
-        exit(1)
+    if X_train is None or Y_train is None or X_test is None:
+        raise RuntimeError("There was a problem with reading CSV data")
 
-    # Comment out line below to remove diagnostic data printing
-    __print_data(training_data, training_labels, training_header or ())
+    # Remove training IDs, as they are in sorted order for training data
+    X_train = X_train[:, 1:]
+    Y_train = Y_train[:, 1:]
 
-    # Write results to a submission file
-    create_submission_file(OUTPUT_FILE, numpy.array([]))
+    # Save test IDs as we need to add them to the submission file
+    test_ids = X_test[:, 0]
+    X_test = X_test[:, 1:]
+
+    # We can substitute this for a more complex imputer later on
+    imputer = SimpleImputer(strategy="median")
+    X_train = imputer.fit_transform(X_train)
+    X_test = imputer.transform(X_test)
+
+    model = xgb.XGBRegressor()
+    model.fit(X_train, Y_train)
+    Y_pred = model.predict(X_test)
+
+    # Add IDs
+    submission = np.stack([test_ids, Y_pred], 1)
+    create_submission_file(OUTPUT_FILE, submission)
 
 
-def __print_data(data: CSVData, labels: CSVData, header: CSVHeader):
+def __print_data(data: CSVData, labels: CSVData, header: CSVHeader) -> None:
     # Print preview of data
     print_array(data, header)
     print_array(labels, header)
@@ -47,7 +62,7 @@ def __print_data(data: CSVData, labels: CSVData, header: CSVHeader):
     print_array_statistics(labels)
 
     # Tensorboard will stuck on "computing PCA" if there are non-number values in the array
-    data = cast(Any, numpy).nan_to_num(data)
+    data = cast(Any, np).nan_to_num(data)
 
     # Create a TensorBoard projector to visualize data
     visualize_data(data[:, 1:], data[:, 0].astype(int), "input_data")
