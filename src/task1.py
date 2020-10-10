@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """The entry point for the scripts for Task 1."""
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from typing import Any, cast
 
 import numpy as np
@@ -22,7 +23,13 @@ TEST_DATA_PATH = f"{TASK_DATA_DIRECTORY}/X_test.csv"
 OUTPUT_FILE = "dist/submission1.csv"
 
 
-def __main():
+def __main(args: Namespace) -> None:
+    """Run the main program.
+
+    Arguments
+    ---------
+    args: The object containing the commandline arguments
+    """
     # Read in data
     X_train, X_header = read_csv(TRAINING_DATA_PATH)
     Y_train, _ = read_csv(TRAINING_LABELS_PATH)
@@ -31,8 +38,8 @@ def __main():
     if X_train is None or Y_train is None or X_test is None:
         raise RuntimeError("There was a problem with reading CSV data")
 
-    # Comment out line below to disable data diagnostics
-    __data_diagnostics(X_train, Y_train, header=X_header or ())
+    if args.diagnose:
+        __data_diagnostics(X_train, Y_train, header=X_header or ())
 
     # Remove training IDs, as they are in sorted order for training data
     X_train = X_train[:, 1:]
@@ -72,4 +79,10 @@ def __data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> Non
     visualize_data(data[:, 1:], data[:, 0].astype(int), "input_data")
 
 
-__main()
+if __name__ == "__main__":
+    parser = ArgumentParser(
+        description="The entry point for the scripts for Task 1",
+        formatter_class=ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
+    __main(parser.parse_args())
