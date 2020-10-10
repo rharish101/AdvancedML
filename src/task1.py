@@ -52,7 +52,7 @@ def __main():
 
     # Add IDs
     submission = np.stack([test_ids, Y_pred], 1)
-    create_submission_file(OUTPUT_FILE, submission)
+    create_submission_file(OUTPUT_FILE, submission, header=("id", "y"))
 
 
 def __data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> None:
