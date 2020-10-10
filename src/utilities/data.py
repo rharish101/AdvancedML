@@ -46,7 +46,7 @@ def read_csv(
         )
     except FileNotFoundError:
         print(
-            f"Error: could not read CSV file at {file_path} . ",
+            f"Error: could not read CSV file at {file_path} .",
             "Make sure the given path is correct and run the program again",
         )
         data = None
@@ -176,5 +176,5 @@ def visualize_data(data: CSVData, ids: List[str], name: str, log_directory: str 
     projector.visualize_embeddings(log_directory, config)
     print(
         f'Run "tensorboard --logdir {log_directory}" and choose PROJECTOR',
-        " to see the data visualization",
+        "to see the data visualization\n",
     )

@@ -23,12 +23,15 @@ OUTPUT_FILE = "dist/submission1.csv"
 
 def __main():
     # Read in data
-    X_train, _ = read_csv(TRAINING_DATA_PATH)
+    X_train, X_header = read_csv(TRAINING_DATA_PATH)
     Y_train, _ = read_csv(TRAINING_LABELS_PATH)
     X_test, _ = read_csv(TEST_DATA_PATH)
 
     if X_train is None or Y_train is None or X_test is None:
         raise RuntimeError("There was a problem with reading CSV data")
+
+    # Comment out line below to disable data diagnostics
+    __data_diagnostics(X_train, Y_train, header=X_header or ())
 
     # Remove training IDs, as they are in sorted order for training data
     X_train = X_train[:, 1:]
@@ -52,7 +55,7 @@ def __main():
     create_submission_file(OUTPUT_FILE, submission)
 
 
-def __print_data(data: CSVData, labels: CSVData, header: CSVHeader) -> None:
+def __data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> None:
     # Print preview of data
     print_array(data, header)
     print_array(labels, header)
