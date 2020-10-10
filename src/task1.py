@@ -6,6 +6,7 @@ from typing import Any, cast
 import numpy as np
 import xgboost as xgb
 from sklearn.impute import SimpleImputer
+from typing_extensions import Final
 
 from typings import CSVData, CSVHeader
 from utilities.data import (
@@ -16,11 +17,10 @@ from utilities.data import (
     visualize_data,
 )
 
-TASK_DATA_DIRECTORY = "data/task1"
-TRAINING_DATA_PATH = f"{TASK_DATA_DIRECTORY}/X_train.csv"
-TRAINING_LABELS_PATH = f"{TASK_DATA_DIRECTORY}/y_train.csv"
-TEST_DATA_PATH = f"{TASK_DATA_DIRECTORY}/X_test.csv"
-OUTPUT_FILE = "dist/submission1.csv"
+TASK_DATA_DIRECTORY: Final = "data/task1"
+TRAINING_DATA_NAME: Final = "X_train.csv"
+TRAINING_LABELS_NAME: Final = "y_train.csv"
+TEST_DATA_PATH: Final = "X_test.csv"
 
 
 def __main(args: Namespace) -> None:
@@ -31,9 +31,9 @@ def __main(args: Namespace) -> None:
     args: The object containing the commandline arguments
     """
     # Read in data
-    X_train, X_header = read_csv(TRAINING_DATA_PATH)
-    Y_train, _ = read_csv(TRAINING_LABELS_PATH)
-    X_test, _ = read_csv(TEST_DATA_PATH)
+    X_train, X_header = read_csv(f"{args.data_dir}/{TRAINING_DATA_NAME}")
+    Y_train, _ = read_csv(f"{args.data_dir}/{TRAINING_LABELS_NAME}")
+    X_test, _ = read_csv(f"{args.data_dir}/{TEST_DATA_PATH}")
 
     if X_train is None or Y_train is None or X_test is None:
         raise RuntimeError("There was a problem with reading CSV data")
@@ -60,7 +60,7 @@ def __main(args: Namespace) -> None:
 
     # Add IDs
     submission = np.stack([test_ids, Y_pred], 1)
-    create_submission_file(OUTPUT_FILE, submission, header=("id", "y"))
+    create_submission_file(args.output, submission, header=("id", "y"))
 
 
 def __data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> None:
@@ -83,6 +83,18 @@ if __name__ == "__main__":
     parser = ArgumentParser(
         description="The entry point for the scripts for Task 1",
         formatter_class=ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default="data/task1",
+        help="path to the directory containing the task data",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="dist/submission1.csv",
+        help="the path by which to save the output CSV",
     )
     parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
     __main(parser.parse_args())

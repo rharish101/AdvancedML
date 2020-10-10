@@ -633,7 +633,7 @@ python-versions = "*"
 version = "1.4.1"
 
 [[package]]
-category = "dev"
+category = "main"
 description = "Backported and Experimental Type Hints for Python 3.5+"
 name = "typing-extensions"
 optional = false
@@ -734,7 +734,7 @@ plotting = ["graphviz", "matplotlib"]
 scikit-learn = ["scikit-learn"]
 
 [metadata]
-content-hash = "a77c08cc42c230930b86c021f2ed1e960153098f2153c727c2faaea30331c20e"
+content-hash = "0680a3e689d557074e19a938116b8f2c203913511559857b5a3f987504b360f9"
 lock-version = "1.0"
 python-versions = "~3.8.5"
 
