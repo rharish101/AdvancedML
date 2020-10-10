@@ -1,8 +1,16 @@
 """The entry point for the scripts for Task 1."""
+from typing import Any, cast
+
 import numpy
 
 from typings import CSVData, CSVHeader
-from utilities.data import create_submission_file, print_array, print_array_statistics, read_csv
+from utilities.data import (
+    create_submission_file,
+    print_array,
+    print_array_statistics,
+    read_csv,
+    visualize_data,
+)
 
 TASK_DATA_DIRECTORY = "data/task1"
 TRAINING_DATA_PATH = f"{TASK_DATA_DIRECTORY}/X_train.csv"
@@ -37,6 +45,12 @@ def __print_data(data: CSVData, labels: CSVData, header: CSVHeader):
     # Print statistics of data
     print_array_statistics(data)
     print_array_statistics(labels)
+
+    # Tensorboard will stuck on "computing PCA" if there are non-number values in the array
+    data = cast(Any, numpy).nan_to_num(data)
+
+    # Create a TensorBoard projector to visualize data
+    visualize_data(data[:, 1:], data[:, 0].astype(int), "input_data")
 
 
 __main()

@@ -1,13 +1,17 @@
 """Contains utilities for data I/O and processing."""
 
+from os import path
 from pathlib import Path
-from typing import Any, Optional, Tuple, Union, cast
+from typing import Any, List, Optional, Tuple, Union, cast
 
 import numpy
 from pandas import DataFrame
 from tabulate import tabulate
+from tensorboard.plugins import projector
 
 from typings import Array2D, CSVData, CSVHeader, StructuredArray
+
+LOG_DIRECTORY = "logs"
 
 
 def read_csv(
@@ -125,4 +129,52 @@ def create_submission_file(
         delimiter=delimiter,
         header=str.join(",", header),
         comments="",
+    )
+
+
+def visualize_data(data: CSVData, ids: List[str], name: str, log_directory: str = LOG_DIRECTORY):
+    """Visualize the given data by creating files for the Tensorboard projector.
+
+    Creates `.tsv` and `.pbtxt` files in the log directory. To use it in Tensorboard,
+    run "tensorboard --logdir <log directory path>" and choose PROJECTOR from the dropdown list."
+
+    Parameters
+    ----------
+    data (CSVData): Numpy array containing the data to be visualized
+
+    ids (List[str]): ID for each vector contained in the data array
+        (i.e. `len(ids) == `data.shape[0]`)
+
+    name (str): Name for the dataset contained in the data array ()
+
+    log_directory (str, optional): Directory name to store the created Tensorboard logfiles in.
+        Defaults to LOG_DIRECTORY
+    """
+    Path(log_directory).mkdir(parents=True, exist_ok=True)
+
+    if " " in name:
+        print("Visualization error: Please specify a name without whitespaces")
+        return
+
+    data_file_name = f"{name}.tsv"
+    metadata_file_name = f"{name}_metadata.tsv"
+
+    cast(Any, numpy).savetxt(
+        path.join(log_directory, data_file_name), data, delimiter="\t", fmt="%f"
+    )
+
+    with open(path.join(log_directory, metadata_file_name), "w") as metadata_writer:
+        for data_id in ids:
+            metadata_writer.write(f"{data_id}\n")
+
+    config = projector.ProjectorConfig()
+    embedding = cast(Any, config).embeddings.add()
+    embedding.tensor_path = data_file_name
+    embedding.metadata_path = metadata_file_name
+    embedding.tensor_name = name
+
+    projector.visualize_embeddings(log_directory, config)
+    print(
+        f'Run "tensorboard --logdir {log_directory}" and choose PROJECTOR',
+        " to see the data visualization",
     )

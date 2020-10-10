@@ -1,4 +1,6 @@
 """The entry point for the scripts for Task 0."""
+from typing import Any, cast
+
 import numpy as np
 from pandas import DataFrame
 
@@ -23,17 +25,17 @@ X_test = DataFrame(csv_data_test)
 Y_train = df_train["y"]
 X_train = df_train.drop(["y", "Id"], 1)
 
-W = np.linalg.lstsq(X_train, Y_train, rcond=-1)[0]
+W = cast(Any, np.linalg).lstsq(X_train, Y_train, rcond=-1)[0]
 
 Y_test = DataFrame(X_test.drop("Id", 1).dot(W))
 
 Y_test.insert(0, "Id", X_test["Id"])
 
 # Print preview of data
-print_array(csv_data_train)
+print_array(csv_data_train, csv_header_train or ())
 
 # Print statistics of data
 print_array_statistics(csv_data_train)
 
 # Write results to a submission file
-create_submission_file(OUTPUT_FILE, Y_test)
+create_submission_file(OUTPUT_FILE, cast(Any, np).asarray(Y_test))
