@@ -102,7 +102,7 @@ if __name__ == "__main__":
         "-k",
         "--cross-val",
         type=int,
-        default=5,
+        default=10,
         help="the k for k-fold cross-validation",
     )
     parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
