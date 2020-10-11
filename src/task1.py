@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """The entry point for the scripts for Task 1."""
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import xgboost as xgb
@@ -18,10 +18,10 @@ from utilities.data import (
     visualize_data,
 )
 
-TASK_DATA_DIRECTORY: Final = "data/task1"
-TRAINING_DATA_NAME: Final = "X_train.csv"
-TRAINING_LABELS_NAME: Final = "y_train.csv"
-TEST_DATA_PATH: Final = "X_test.csv"
+TASK_DATA_DIRECTORY: Final[str] = "data/task1"
+TRAINING_DATA_NAME: Final[str] = "X_train.csv"
+TRAINING_LABELS_NAME: Final[str] = "y_train.csv"
+TEST_DATA_PATH: Final[str] = "X_test.csv"
 
 
 def __main(args: Namespace) -> None:
@@ -59,7 +59,7 @@ def __main(args: Namespace) -> None:
     elif args.mode == "final":
         model.fit(X_train, Y_train)
         Y_pred = model.predict(X_test)
-        submission = np.stack([test_ids, Y_pred], 1)  # Add IDs
+        submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
         create_submission_file(args.output, submission, header=("id", "y"))
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
@@ -75,7 +75,7 @@ def __data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> Non
     print_array_statistics(labels)
 
     # Tensorboard will stuck on "computing PCA" if there are non-number values in the array
-    data = cast(Any, np).nan_to_num(data)
+    data = np.nan_to_num(data)
 
     # Create a TensorBoard projector to visualize data
     visualize_data(data[:, 1:], data[:, 0].astype(int), "input_data")

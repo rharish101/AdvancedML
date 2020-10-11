@@ -18,8 +18,5 @@
     "root": "src"
   }],
 
-  "typeCheckingMode": "strict",
-  "reportMissingTypeStubs": false,
-  "reportUnknownMemberType": false,
-  "reportUnknownArgumentType": false
+  "typeCheckingMode": "basic"
 }

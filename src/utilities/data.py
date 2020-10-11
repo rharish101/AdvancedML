@@ -9,7 +9,7 @@ from pandas import DataFrame
 from tabulate import tabulate
 from tensorboard.plugins import projector
 
-from typings import Array2D, CSVData, CSVHeader, StructuredArray
+from typings import Array2D, CSVData, CSVHeader
 
 LOG_DIRECTORY = "logs"
 
@@ -40,10 +40,7 @@ def read_csv(
     print(f'Loading "{file_path}"...')
 
     try:
-        data = cast(
-            StructuredArray,
-            numpy.genfromtxt(file_path, delimiter=delimiter, names=includes_header),
-        )
+        data = numpy.genfromtxt(file_path, delimiter=delimiter, names=includes_header)
     except FileNotFoundError:
         print(
             f"Error: could not read CSV file at {file_path} .",
@@ -55,7 +52,7 @@ def read_csv(
     if data is not None:
         header = data.dtype.names
         # Convert numpy structured array to multi-dimensional array
-        data = cast(CSVData, data.view(numpy.float).reshape(data.shape + (-1,)))
+        data = data.view(numpy.float).reshape(data.shape + (-1,))
 
     return (data, header)
 
@@ -105,7 +102,7 @@ def print_array_statistics(numpy_array: Array2D) -> None:
 def create_submission_file(
     file_path: str,
     data: CSVData,
-    header: CSVHeader = ("Id", "y"),
+    header: CSVHeader = ("id", "y"),
     delimiter: str = ",",
 ) -> None:
     """Create a submission file in CSV format.
@@ -123,7 +120,7 @@ def create_submission_file(
     """
     Path(file_path).parent.mkdir(parents=True, exist_ok=True)
 
-    cast(Any, numpy).savetxt(
+    numpy.savetxt(
         file_path,
         data,
         delimiter=delimiter,
@@ -159,9 +156,7 @@ def visualize_data(data: CSVData, ids: List[str], name: str, log_directory: str 
     data_file_name = f"{name}.tsv"
     metadata_file_name = f"{name}_metadata.tsv"
 
-    cast(Any, numpy).savetxt(
-        path.join(log_directory, data_file_name), data, delimiter="\t", fmt="%f"
-    )
+    numpy.savetxt(path.join(log_directory, data_file_name), data, delimiter="\t", fmt="%f")
 
     with open(path.join(log_directory, metadata_file_name), "w") as metadata_writer:
         for data_id in ids:
