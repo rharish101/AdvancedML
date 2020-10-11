@@ -50,19 +50,19 @@ def __main(args: Namespace) -> None:
     X_test = imputer.transform(X_test)
 
     model = xgb.XGBRegressor()
-    # Returns an array of the k cross-validation R^2 scores
-    scores = cross_val_score(model, X_train, Y_train, cv=args.cross_val, scoring="r2")
-    avg_score = np.mean(scores)
-    print(f"Average R^2 score is: {avg_score:.4f}")
 
-    # Train on the complete dataset
-    model = xgb.XGBRegressor()
-    model.fit(X_train, Y_train)
-    Y_pred = model.predict(X_test)
-
-    # Add IDs
-    submission = np.stack([test_ids, Y_pred], 1)
-    create_submission_file(args.output, submission, header=("id", "y"))
+    if args.mode == "eval":
+        # Returns an array of the k cross-validation R^2 scores
+        scores = cross_val_score(model, X_train, Y_train, cv=args.cross_val, scoring="r2")
+        avg_score = np.mean(scores)
+        print(f"Average R^2 score is: {avg_score:.4f}")
+    elif args.mode == "final":
+        model.fit(X_train, Y_train)
+        Y_pred = model.predict(X_test)
+        submission = np.stack([test_ids, Y_pred], 1)  # Add IDs
+        create_submission_file(args.output, submission, header=("id", "y"))
+    else:
+        raise ValueError(f"Invalid mode: {args.mode}")
 
 
 def __data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> None:
@@ -96,7 +96,13 @@ if __name__ == "__main__":
         "--output",
         type=str,
         default="dist/submission1.csv",
-        help="the path by which to save the output CSV",
+        help="the path by which to save the output CSV (only used in the 'final' mode)",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["eval", "final"],
+        default="eval",
+        help="whether to evaluate using cross-validation or do final training to generate output",
     )
     parser.add_argument(
         "-k",
