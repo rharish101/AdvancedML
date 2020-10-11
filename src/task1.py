@@ -50,8 +50,10 @@ def __main(args: Namespace) -> None:
     X_test = imputer.transform(X_test)
 
     model = xgb.XGBRegressor()
+    # Returns an array of the k cross-validation R^2 scores
     scores = cross_val_score(model, X_train, Y_train, cv=args.cross_val, scoring="r2")
-    print(f"R^2 scores are: {scores}")
+    avg_score = np.mean(scores)
+    print(f"Average R^2 score is: {avg_score:.4f}")
 
     # Train on the complete dataset
     model = xgb.XGBRegressor()
