@@ -50,7 +50,7 @@ def __main(args: Namespace) -> None:
     X_train_w_outliers = imputer.fit_transform(X_train)
 
     # Use LOF for outlier detection
-    outliers = LocalOutlierFactor().fit_predict(X_train_w_outliers)
+    outliers = LocalOutlierFactor(contamination=0.09).fit_predict(X_train_w_outliers)
 
     # Take out the outliers
     X_train = X_train[outliers == 1]
