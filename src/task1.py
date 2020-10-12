@@ -7,6 +7,7 @@ import numpy as np
 import xgboost as xgb
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
+from sklearn.neighbors import LocalOutlierFactor
 from typing_extensions import Final
 
 from typings import CSVData, CSVHeader
@@ -46,6 +47,16 @@ def __main(args: Namespace) -> None:
 
     # We can substitute this for a more complex imputer later on
     imputer = SimpleImputer(strategy="median")
+    X_train_w_outliers = imputer.fit_transform(X_train)
+
+    # Use LOF for outlier detection
+    outliers = LocalOutlierFactor().fit_predict(X_train_w_outliers)
+
+    # Take out the outliers
+    X_train = X_train[outliers == 1]
+    Y_train = Y_train[outliers == 1]
+
+    # (Re-)impute the data without the outliers
     X_train = imputer.fit_transform(X_train)
     X_test = imputer.transform(X_test)
 
