@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import torch
 import xgboost as xgb
+from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import LocalOutlierFactor
@@ -71,6 +72,10 @@ def __main(args: Namespace) -> None:
     # (Re-)impute the data without the outliers
     X_train = imputer.fit_transform(X_train)
     X_test = imputer.transform(X_test)
+
+    pca = PCA()
+    pca.fit(X_train)
+    pca.transform(X_train)
 
     __evaluate_xgb_model(args, X_train, Y_train, X_test, test_ids)
 
