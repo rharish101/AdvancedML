@@ -4,12 +4,15 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from typing import Any
 
 import numpy as np
+import torch
 import xgboost as xgb
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import LocalOutlierFactor
+from torch.utils.data import DataLoader
 from typing_extensions import Final
 
+from models.simple_nn import SimpleNN
 from typings import CSVData, CSVHeader
 from utilities.data import (
     create_submission_file,
@@ -18,11 +21,15 @@ from utilities.data import (
     read_csv,
     visualize_data,
 )
+from utilities.dataset import DataSet
+from utilities.nn import train_network
 
 TASK_DATA_DIRECTORY: Final[str] = "data/task1"
 TRAINING_DATA_NAME: Final[str] = "X_train.csv"
 TRAINING_LABELS_NAME: Final[str] = "y_train.csv"
 TEST_DATA_PATH: Final[str] = "X_test.csv"
+
+torch.device("cuda:0")
 
 
 def __main(args: Namespace) -> None:
@@ -35,7 +42,7 @@ def __main(args: Namespace) -> None:
         raise RuntimeError("There was a problem with reading CSV data")
 
     if args.diagnose:
-        __data_diagnostics(X_train, Y_train, header=X_header or ())
+        __run_data_diagnostics(X_train, Y_train, header=X_header or ())
 
     # Remove training IDs, as they are in sorted order for training data
     X_train = X_train[:, 1:]
@@ -60,7 +67,8 @@ def __main(args: Namespace) -> None:
     X_train = imputer.fit_transform(X_train)
     X_test = imputer.transform(X_test)
 
-    model = xgb.XGBRegressor()
+    # __get_xgb_model()
+    model = __get_nn_model(X_train, Y_train)
 
     if args.mode == "eval":
         # Returns an array of the k cross-validation R^2 scores
@@ -76,7 +84,40 @@ def __main(args: Namespace) -> None:
         raise ValueError(f"Invalid mode: {args.mode}")
 
 
-def __data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> None:
+def __get_xgb_model():
+    return xgb.XGBRegressor()
+
+
+def __get_nn_model(X_train, Y_train):
+    model = SimpleNN(X_train.shape[1])
+
+    training_indices = np.random.choice(
+        X_train.shape[0], int(X_train.shape[0] * 0.2), replace=False
+    )
+
+    training_loader = DataLoader(
+        DataSet(X_train[training_indices], Y_train[training_indices]),
+        batch_size=2,
+        shuffle=True,
+        num_workers=0,
+    )
+
+    mask = np.ones(X_train.shape[0], dtype=bool)
+    mask[training_indices] = False
+
+    validation_loader = DataLoader(
+        DataSet(X_train[mask], Y_train[mask]),
+        batch_size=4,
+        shuffle=True,
+        num_workers=0,
+    )
+
+    train_network(model, training_loader, validation_loader)
+
+    return model
+
+
+def __run_data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> None:
     # Print preview of data
     print_array(data, header)
     print_array(labels, header)
