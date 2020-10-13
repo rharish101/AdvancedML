@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """The entry point for the scripts for Task 1."""
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -9,6 +10,7 @@ import xgboost as xgb
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import LocalOutlierFactor
+from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from typing_extensions import Final
 
@@ -30,6 +32,9 @@ TRAINING_LABELS_NAME: Final[str] = "y_train.csv"
 TEST_DATA_PATH: Final[str] = "X_test.csv"
 
 torch.device("cuda:0")
+tensorboard_writer = SummaryWriter(
+    log_dir="logs/training" + datetime.now().strftime("-%Y%m%d-%H%M%S")
+)
 
 
 def __main(args: Namespace) -> None:
@@ -67,8 +72,20 @@ def __main(args: Namespace) -> None:
     X_train = imputer.fit_transform(X_train)
     X_test = imputer.transform(X_test)
 
-    # __get_xgb_model()
-    model = __get_nn_model(X_train, Y_train)
+    __evaluate_xgb_model(args, X_train, Y_train, X_test, test_ids)
+
+    # __evaluate_nn_model(X_train, Y_train)
+
+
+def __log_to_tensorboard(env):
+    for name, value in env.evaluation_result_list:
+        tensorboard_writer.add_scalar(name, value, env.iteration)
+
+
+def __evaluate_xgb_model(
+    args: Namespace, X_train: CSVData, Y_train: CSVData, X_test: CSVData, test_ids
+):
+    model = xgb.XGBRegressor()
 
     if args.mode == "eval":
         # Returns an array of the k cross-validation R^2 scores
@@ -76,7 +93,17 @@ def __main(args: Namespace) -> None:
         avg_score = np.mean(scores)
         print(f"Average R^2 score is: {avg_score:.4f}")
     elif args.mode == "final":
-        model.fit(X_train, Y_train)
+        print()
+        model.fit(X_train, Y_train, eval_set=[(X_train, Y_train)], callbacks=[__log_to_tensorboard])
+
+        feature_importances = model.get_booster().get_score(importance_type="gain").items()
+
+        feature_importances = sorted(feature_importances, key=lambda tuple: tuple[1], reverse=True)
+        print("\n10 most important features:")
+        print(feature_importances[:10])
+        print("\n10 least important features:")
+        print(feature_importances[:-10:-1])
+
         Y_pred = model.predict(X_test)
         submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
         create_submission_file(args.output, submission, header=("id", "y"))
@@ -84,11 +111,7 @@ def __main(args: Namespace) -> None:
         raise ValueError(f"Invalid mode: {args.mode}")
 
 
-def __get_xgb_model():
-    return xgb.XGBRegressor()
-
-
-def __get_nn_model(X_train, Y_train):
+def __evaluate_nn_model(X_train, Y_train):
     model = SimpleNN(X_train.shape[1])
 
     training_indices = np.random.choice(

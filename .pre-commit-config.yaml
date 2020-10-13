@@ -3,7 +3,7 @@ repos:
     rev: 20.8b1
     hooks:
       - id: black
-        args: [--line-length, '99']
+        args: [--line-length, '100']
   - repo: https://github.com/pycqa/isort
     rev: 5.5.3
     hooks:

@@ -28,7 +28,7 @@ def train_network(model: nn.Module, training_loader: DataLoader, validation_load
     if device == "cuda:0":
         model.cuda()
 
-    optimizer = cast(Any, torch).optim.Adam(model.parameters(), lr=0.01)
+    optimizer = cast(Any, torch).optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.MSELoss()
 
     trainer = create_supervised_trainer(model, optimizer, criterion, device=device)
