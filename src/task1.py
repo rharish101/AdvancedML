@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from typing_extensions import Final
 
 from models.simple_nn import SimpleNN
-from typings import CSVData, CSVHeader
+from typings import BaseRegressor, CSVData, CSVHeader
 from utilities.data import (
     create_submission_file,
     print_array,
@@ -77,12 +77,19 @@ def __main(args: Namespace) -> None:
     X_train = pca.fit_transform(X_train)
     X_test = pca.transform(X_test)
 
-    if args.model == "xgb":
-        __evaluate_xgb_model(args, X_train, Y_train, X_test, test_ids)
-    elif args.model == "nn":
+    if args.model == "nn":
+        # TODO: This should be removed after the NN model is complete
         __evaluate_nn_model(X_train, Y_train)
     else:
-        raise ValueError(f"Invalid model choice: {args.model}")
+        model = __choose_model(args.model)
+
+    if args.mode == "eval":
+        score = evaluate_model(model, X_train, Y_train, k=args.cross_val)
+        print(f"Average R^2 score is: {score:.4f}")
+    elif args.mode == "final":
+        __finalise_model(model, X_train, Y_train, X_test, test_ids, args.output)
+    else:
+        raise ValueError(f"Invalid mode: {args.mode}")
 
 
 def __log_to_tensorboard(env):
@@ -90,33 +97,70 @@ def __log_to_tensorboard(env):
         tensorboard_writer.add_scalar(name, value, env.iteration)
 
 
-def __evaluate_xgb_model(
-    args: Namespace, X_train: CSVData, Y_train: CSVData, X_test: CSVData, test_ids
-):
-    model = xgb.XGBRegressor()
-
-    if args.mode == "eval":
-        # Returns an array of the k cross-validation R^2 scores
-        scores = cross_val_score(model, X_train, Y_train, cv=args.cross_val, scoring="r2")
-        avg_score = np.mean(scores)
-        print(f"Average R^2 score is: {avg_score:.4f}")
-    elif args.mode == "final":
-        print()
-        model.fit(X_train, Y_train, eval_set=[(X_train, Y_train)], callbacks=[__log_to_tensorboard])
-
-        feature_importances = model.get_booster().get_score(importance_type="gain").items()
-
-        feature_importances = sorted(feature_importances, key=lambda tuple: tuple[1], reverse=True)
-        print("\n10 most important features:")
-        print(feature_importances[:10])
-        print("\n10 least important features:")
-        print(feature_importances[:-11:-1])
-
-        Y_pred = model.predict(X_test)
-        submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
-        create_submission_file(args.output, submission, header=("id", "y"))
+def __choose_model(name: str) -> BaseRegressor:
+    """Choose a model given the name."""
+    if name == "xgb":
+        return xgb.XGBRegressor()
+    elif name == "nn":
+        # TODO: This should ideally do:
+        # return NNRegressor(param_1, param_2, ...)
+        raise NotImplementedError(f"'{name}' model not implemented")
     else:
-        raise ValueError(f"Invalid mode: {args.mode}")
+        raise ValueError(f"Invalid model name: {name}")
+
+
+def evaluate_model(model: BaseRegressor, X_train: CSVData, Y_train: CSVData, k: int) -> float:
+    """Perform cross-validation on the given dataset and return the R^2 score.
+
+    Parameters
+    ----------
+    model: The regressor model
+    X_train: The training data
+    Y_train: The training labels
+    k: The number of folds in k-fold cross-validation
+
+    Returns
+    -------
+    The R^2 validation score
+    """
+    # Returns an array of the k cross-validation R^2 scores
+    scores = cross_val_score(model, X_train, Y_train, cv=k, scoring="r2")
+    avg_score = np.mean(scores)
+    return avg_score
+
+
+def __finalise_model(
+    model: BaseRegressor,
+    X_train: CSVData,
+    Y_train: CSVData,
+    X_test: CSVData,
+    test_ids: CSVData,
+    output: str,
+) -> None:
+    """Train the model on the complete data and generate the submission file.
+
+    Parameters
+    ----------
+    model: The regressor model
+    X_train: The training data
+    Y_train: The training labels
+    X_test: The test data
+    test_ids: The IDs for the test data
+    """
+    print()
+    model.fit(X_train, Y_train, eval_set=[(X_train, Y_train)], callbacks=[__log_to_tensorboard])
+
+    feature_importances = model.get_booster().get_score(importance_type="gain").items()
+
+    feature_importances = sorted(feature_importances, key=lambda tuple: tuple[1], reverse=True)
+    print("\n10 most important features:")
+    print(feature_importances[:10])
+    print("\n10 least important features:")
+    print(feature_importances[:-11:-1])
+
+    Y_pred = model.predict(X_test)
+    submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
+    create_submission_file(output, submission, header=("id", "y"))
 
 
 def __evaluate_nn_model(X_train, Y_train):
