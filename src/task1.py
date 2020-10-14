@@ -42,9 +42,8 @@ def __main(args: Namespace) -> None:
     # Read in data
     X_train, X_header = read_csv(f"{args.data_dir}/{TRAINING_DATA_NAME}")
     Y_train, _ = read_csv(f"{args.data_dir}/{TRAINING_LABELS_NAME}")
-    X_test, _ = read_csv(f"{args.data_dir}/{TEST_DATA_PATH}")
 
-    if X_train is None or Y_train is None or X_test is None:
+    if X_train is None or Y_train is None:
         raise RuntimeError("There was a problem with reading CSV data")
 
     if args.diagnose:
@@ -53,10 +52,6 @@ def __main(args: Namespace) -> None:
     # Remove training IDs, as they are in sorted order for training data
     X_train = X_train[:, 1:]
     Y_train = Y_train[:, 1:]
-
-    # Save test IDs as we need to add them to the submission file
-    test_ids = X_test[:, 0]
-    X_test = X_test[:, 1:]
 
     # We can substitute this for a more complex imputer later on
     imputer = SimpleImputer(strategy="median")
@@ -71,11 +66,9 @@ def __main(args: Namespace) -> None:
 
     # (Re-)impute the data without the outliers
     X_train = imputer.fit_transform(X_train)
-    X_test = imputer.transform(X_test)
 
     pca = PCA()
     X_train = pca.fit_transform(X_train)
-    X_test = pca.transform(X_test)
 
     if args.model == "nn":
         # TODO: This should be removed after the NN model is complete
@@ -86,8 +79,21 @@ def __main(args: Namespace) -> None:
     if args.mode == "eval":
         score = evaluate_model(model, X_train, Y_train, k=args.cross_val)
         print(f"Average R^2 score is: {score:.4f}")
+
     elif args.mode == "final":
+        X_test, _ = read_csv(f"{args.data_dir}/{TEST_DATA_PATH}")
+        if X_test is None:
+            raise RuntimeError("There was a problem with reading CSV data")
+
+        # Save test IDs as we need to add them to the submission file
+        test_ids = X_test[:, 0]
+        X_test = X_test[:, 1:]
+
+        X_test = imputer.transform(X_test)
+        X_test = pca.transform(X_test)
+
         __finalise_model(model, X_train, Y_train, X_test, test_ids, args.output)
+
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
 
