@@ -74,8 +74,8 @@ def __main(args: Namespace) -> None:
     X_test = imputer.transform(X_test)
 
     pca = PCA()
-    pca.fit(X_train)
-    pca.transform(X_train)
+    X_train = pca.fit_transform(X_train)
+    X_test = pca.transform(X_test)
 
     if args.model == "xgb":
         __evaluate_xgb_model(args, X_train, Y_train, X_test, test_ids)
