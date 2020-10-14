@@ -110,7 +110,7 @@ def __evaluate_xgb_model(
         print("\n10 most important features:")
         print(feature_importances[:10])
         print("\n10 least important features:")
-        print(feature_importances[:-10:-1])
+        print(feature_importances[:-11:-1])
 
         Y_pred = model.predict(X_test)
         submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
