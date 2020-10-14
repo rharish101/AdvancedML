@@ -77,9 +77,12 @@ def __main(args: Namespace) -> None:
     pca.fit(X_train)
     pca.transform(X_train)
 
-    __evaluate_xgb_model(args, X_train, Y_train, X_test, test_ids)
-
-    # __evaluate_nn_model(X_train, Y_train)
+    if args.model == "xgb":
+        __evaluate_nn_model(X_train, Y_train)
+    elif args.model == "nn":
+        __evaluate_xgb_model(args, X_train, Y_train, X_test, test_ids)
+    else:
+        raise ValueError(f"Invalid model choice: {args.model}")
 
 
 def __log_to_tensorboard(env):
@@ -183,6 +186,12 @@ if __name__ == "__main__":
         choices=["eval", "final"],
         default="eval",
         help="whether to evaluate using cross-validation or do final training to generate output",
+    )
+    parser.add_argument(
+        "--model",
+        choices=["xgb", "nn"],
+        default="xgb",
+        help="the choice of model to train",
     )
     parser.add_argument(
         "-k",
