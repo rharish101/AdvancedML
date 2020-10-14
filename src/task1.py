@@ -78,9 +78,9 @@ def __main(args: Namespace) -> None:
     pca.transform(X_train)
 
     if args.model == "xgb":
-        __evaluate_nn_model(X_train, Y_train)
-    elif args.model == "nn":
         __evaluate_xgb_model(args, X_train, Y_train, X_test, test_ids)
+    elif args.model == "nn":
+        __evaluate_nn_model(X_train, Y_train)
     else:
         raise ValueError(f"Invalid model choice: {args.model}")
 
