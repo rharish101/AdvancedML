@@ -5,8 +5,10 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import torch
 import xgboost as xgb
+from models.simple_nn import SimpleNN
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
@@ -15,7 +17,6 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from typing_extensions import Final
 
-from models.simple_nn import SimpleNN
 from typings import BaseRegressor, CSVData, CSVHeader
 from utilities.data import (
     create_submission_file,
@@ -67,6 +68,9 @@ def __main(args: Namespace) -> None:
     # (Re-)impute the data without the outliers
     X_train = imputer.fit_transform(X_train)
 
+    preserve = __select_features_correlation(X_train, Y_train)
+    X_train = X_train[:, preserve]
+
     pca = PCA()
     X_train = pca.fit_transform(X_train)
 
@@ -90,6 +94,8 @@ def __main(args: Namespace) -> None:
         X_test = X_test[:, 1:]
 
         X_test = imputer.transform(X_test)
+        X_test = X_test[:, preserve]
+
         X_test = pca.transform(X_test)
 
         __finalise_model(model, X_train, Y_train, X_test, test_ids, args.output)
@@ -133,6 +139,39 @@ def evaluate_model(model: BaseRegressor, X_train: CSVData, Y_train: CSVData, k: 
     scores = cross_val_score(model, X_train, Y_train, cv=k, scoring="r2")
     avg_score = np.mean(scores)
     return avg_score
+
+
+def __select_features_correlation(
+    X_train, Y_train, minimum_target_correlation=0.001, maximum_mutual_correlation=0.90
+):
+    """Determine which features should be removed based on mutual/target correlation.
+
+    Parameters
+    ----------
+    X_train: The training data
+    Y_train: The corresponding labels
+    minimum_target_correlation: Features with less corr with the target should be removed
+    maximum_mutual_correlation: Features with more corr with other feature should be removed
+
+    Returns
+    -------
+    A list indicating which feature should be preserved and which not
+    """
+    df = pd.concat([pd.DataFrame(X_train), pd.DataFrame(Y_train)], axis=1)
+
+    cor = df.corr()
+
+    cor_target = abs(cor.iloc[-1])[:-1]
+    preserve = cor_target >= minimum_target_correlation
+
+    # For every feature, see if there is another feauture with which it has high correlation
+    for c in range(X_train.shape[1]):
+        for f in range(c, X_train.shape[1]):
+            if cor.iloc[f, c] > maximum_mutual_correlation:
+                preserve[c] = False
+                break
+
+    return preserve
 
 
 def __finalise_model(
