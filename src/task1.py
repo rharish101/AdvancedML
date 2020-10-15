@@ -166,7 +166,7 @@ def __select_features_correlation(
 
     # For every feature, see if there is another feauture with which it has high correlation
     for c in range(X_train.shape[1]):
-        for f in range(c, X_train.shape[1]):
+        for f in range(c + 1, X_train.shape[1]):
             if cor.iloc[f, c] > maximum_mutual_correlation:
                 preserve[c] = False
                 break
