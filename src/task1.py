@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 import torch
 import xgboost as xgb
-from models.simple_nn import SimpleNN
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
@@ -17,6 +16,7 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from typing_extensions import Final
 
+from models.simple_nn import SimpleNN
 from typings import BaseRegressor, CSVData, CSVHeader
 from utilities.data import (
     create_submission_file,
@@ -166,7 +166,7 @@ def __select_features_correlation(
 
     # For every feature, see if there is another feauture with which it has high correlation
     for c in range(X_train.shape[1]):
-        for f in range(c, X_train.shape[1]):
+        for f in range(c + 1, X_train.shape[1]):
             if cor.iloc[f, c] > maximum_mutual_correlation:
                 preserve[c] = False
                 break
