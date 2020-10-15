@@ -71,8 +71,9 @@ def __main(args: Namespace) -> None:
     preserve = __select_features_correlation(X_train, Y_train)
     X_train = X_train[:, preserve]
 
-    pca = PCA()
-    X_train = pca.fit_transform(X_train)
+    if args.pca:
+        pca = PCA()
+        X_train = pca.fit_transform(X_train)
 
     if args.model == "nn":
         # TODO: This should be removed after the NN model is complete
@@ -96,7 +97,8 @@ def __main(args: Namespace) -> None:
         X_test = imputer.transform(X_test)
         X_test = X_test[:, preserve]
 
-        X_test = pca.transform(X_test)
+        if args.pca:
+            X_test = pca.transform(X_test)
 
         __finalise_model(model, X_train, Y_train, X_test, test_ids, args.output)
 
@@ -275,6 +277,11 @@ if __name__ == "__main__":
         choices=["eval", "final"],
         default="eval",
         help="whether to evaluate using cross-validation or do final training to generate output",
+    )
+    parser.add_argument(
+        "--pca",
+        action="store_true",
+        help="whether to use PCA",
     )
     parser.add_argument(
         "--model",
