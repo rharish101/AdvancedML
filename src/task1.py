@@ -288,18 +288,7 @@ if __name__ == "__main__":
         default="data/task1",
         help="path to the directory containing the task data",
     )
-    parser.add_argument(
-        "--output",
-        type=str,
-        default="dist/submission1.csv",
-        help="the path by which to save the output CSV (only used in the 'final' mode)",
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["eval", "final"],
-        default="eval",
-        help="whether to evaluate using cross-validation or do final training to generate output",
-    )
+    parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
     parser.add_argument(
         "--pca",
         action="store_true",
@@ -311,12 +300,29 @@ if __name__ == "__main__":
         default="xgb",
         help="the choice of model to train",
     )
-    parser.add_argument(
+    subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
+
+    # Sub-parser for k-fold cross-validation
+    eval_parser = subparsers.add_parser(
+        "eval", description="evaluate using k-fold cross-validation"
+    )
+    eval_parser.add_argument(
         "-k",
         "--cross-val",
         type=int,
         default=10,
         help="the k for k-fold cross-validation",
     )
-    parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
+
+    # Sub-parser for final training
+    final_parser = subparsers.add_parser(
+        "final", description="do final training to generate output"
+    )
+    final_parser.add_argument(
+        "--output",
+        type=str,
+        default="dist/submission1.csv",
+        help="the path by which to save the output CSV (only used in the 'final' mode)",
+    )
+
     __main(parser.parse_args())
