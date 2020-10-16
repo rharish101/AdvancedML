@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 import xgboost as xgb
+import yaml
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
@@ -40,6 +41,11 @@ tensorboard_writer = SummaryWriter(
 
 
 def __main(args: Namespace) -> None:
+    # Load hyper-parameters, if a config exists
+    with open(args.config, "r") as conf_file:
+        config = yaml.safe_load(conf_file)
+    config = {} if config is None else config
+
     # Read in data
     X_train, X_header = read_csv(f"{args.data_dir}/{TRAINING_DATA_NAME}")
     Y_train, _ = read_csv(f"{args.data_dir}/{TRAINING_LABELS_NAME}")
@@ -50,7 +56,7 @@ def __main(args: Namespace) -> None:
     if args.diagnose:
         __run_data_diagnostics(X_train, Y_train, header=X_header or ())
 
-    X_train, Y_train, imputer, preserve = preprocess(X_train, Y_train)
+    X_train, Y_train, imputer, preserve = preprocess(X_train, Y_train, **config)
 
     if args.pca:
         pca = PCA()
@@ -60,7 +66,7 @@ def __main(args: Namespace) -> None:
         # TODO: This should be removed after the NN model is complete
         __evaluate_nn_model(X_train, Y_train)
     else:
-        model = __choose_model(args.model)
+        model = choose_model(args.model, **config)
 
     if args.mode == "eval":
         score = evaluate_model(model, X_train, Y_train, k=args.cross_val)
@@ -88,7 +94,13 @@ def __main(args: Namespace) -> None:
 
 
 def preprocess(
-    X_train: CSVData, Y_train: CSVData
+    X_train: CSVData,
+    Y_train: CSVData,
+    n_neighbors: int = 20,
+    contamination: float = 0.09,
+    min_tgt_corr: float = 0.001,
+    max_mutual_corr: float = 0.9,
+    **kwargs,
 ) -> Tuple[CSVData, CSVData, SimpleImputer, List[bool]]:
     """Preprocess the data.
 
@@ -96,6 +108,10 @@ def preprocess(
     ----------
     X_train: The training data
     Y_train: The training labels
+    n_neighbors: n_neighbors for LocalOutlierFactor
+    contamination: contamination for LocalOutlierFactor
+    min_tgt_corr: Features with less corr with the target should be removed
+    max_mutual_corr: Features with more corr with other feature should be removed
 
     Returns
     -------
@@ -113,7 +129,9 @@ def preprocess(
     X_train_w_outliers = imputer.fit_transform(X_train)
 
     # Use LOF for outlier detection
-    outliers = LocalOutlierFactor(contamination=0.09).fit_predict(X_train_w_outliers)
+    outliers = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=contamination).fit_predict(
+        X_train_w_outliers
+    )
 
     # Take out the outliers
     X_train = X_train[outliers == 1]
@@ -122,7 +140,12 @@ def preprocess(
     # (Re-)impute the data without the outliers
     X_train = imputer.fit_transform(X_train)
 
-    preserve = __select_features_correlation(X_train, Y_train)
+    preserve = __select_features_correlation(
+        X_train,
+        Y_train,
+        minimum_target_correlation=min_tgt_corr,
+        maximum_mutual_correlation=max_mutual_corr,
+    )
     X_train = X_train[:, preserve]
 
     return X_train, Y_train, imputer, preserve
@@ -133,10 +156,22 @@ def __log_to_tensorboard(env):
         tensorboard_writer.add_scalar(name, value, env.iteration)
 
 
-def __choose_model(name: str) -> BaseRegressor:
-    """Choose a model given the name."""
+def choose_model(
+    name: str,
+    n_estimators: int = 100,
+    max_depth: int = 6,
+    learning_rate: float = 0.3,
+    reg_lambda: float = 1.0,
+    **kwargs,
+) -> BaseRegressor:
+    """Choose a model given the name and hyper-parameters."""
     if name == "xgb":
-        return xgb.XGBRegressor()
+        return xgb.XGBRegressor(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            learning_rate=learning_rate,
+            reg_lambda=reg_lambda,
+        )
     elif name == "nn":
         # TODO: This should ideally do:
         # return NNRegressor(param_1, param_2, ...)
@@ -289,6 +324,12 @@ if __name__ == "__main__":
         choices=["xgb", "nn"],
         default="xgb",
         help="the choice of model to train",
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="config/task1.yaml",
+        help="the path to the YAML config containing the hyper-parameters",
     )
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
 

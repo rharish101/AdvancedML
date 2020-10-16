@@ -467,7 +467,7 @@ python-versions = "*"
 version = "2020.1"
 
 [[package]]
-category = "dev"
+category = "main"
 description = "YAML parser and emitter for Python"
 name = "pyyaml"
 optional = false
@@ -778,7 +778,7 @@ plotting = ["graphviz", "matplotlib"]
 scikit-learn = ["scikit-learn"]
 
 [metadata]
-content-hash = "2f4c4d5c6e03c8a39bd06bf423aba7c3e72199a54051cc3334fc4c7eb2c0bb6e"
+content-hash = "e24f2e45fdffd64c2a9522fc3b227df209e7d3759579ba7aa530ee00c85b2045"
 lock-version = "1.0"
 python-versions = "~3.8.5"
 
