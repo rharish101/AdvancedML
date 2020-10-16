@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import torch
 import xgboost as xgb
 from sklearn.decomposition import PCA
@@ -16,7 +17,7 @@ from torch.utils.data import DataLoader
 from typing_extensions import Final
 
 from models.simple_nn import SimpleNN
-from typings import CSVData, CSVHeader
+from typings import BaseRegressor, CSVData, CSVHeader
 from utilities.data import (
     create_submission_file,
     print_array,
@@ -42,9 +43,8 @@ def __main(args: Namespace) -> None:
     # Read in data
     X_train, X_header = read_csv(f"{args.data_dir}/{TRAINING_DATA_NAME}")
     Y_train, _ = read_csv(f"{args.data_dir}/{TRAINING_LABELS_NAME}")
-    X_test, _ = read_csv(f"{args.data_dir}/{TEST_DATA_PATH}")
 
-    if X_train is None or Y_train is None or X_test is None:
+    if X_train is None or Y_train is None:
         raise RuntimeError("There was a problem with reading CSV data")
 
     if args.diagnose:
@@ -53,10 +53,6 @@ def __main(args: Namespace) -> None:
     # Remove training IDs, as they are in sorted order for training data
     X_train = X_train[:, 1:]
     Y_train = Y_train[:, 1:]
-
-    # Save test IDs as we need to add them to the submission file
-    test_ids = X_test[:, 0]
-    X_test = X_test[:, 1:]
 
     # We can substitute this for a more complex imputer later on
     imputer = SimpleImputer(strategy="median")
@@ -71,15 +67,43 @@ def __main(args: Namespace) -> None:
 
     # (Re-)impute the data without the outliers
     X_train = imputer.fit_transform(X_train)
-    X_test = imputer.transform(X_test)
 
-    pca = PCA()
-    pca.fit(X_train)
-    pca.transform(X_train)
+    preserve = __select_features_correlation(X_train, Y_train)
+    X_train = X_train[:, preserve]
 
-    __evaluate_xgb_model(args, X_train, Y_train, X_test, test_ids)
+    if args.pca:
+        pca = PCA()
+        X_train = pca.fit_transform(X_train)
 
-    # __evaluate_nn_model(X_train, Y_train)
+    if args.model == "nn":
+        # TODO: This should be removed after the NN model is complete
+        __evaluate_nn_model(X_train, Y_train)
+    else:
+        model = __choose_model(args.model)
+
+    if args.mode == "eval":
+        score = evaluate_model(model, X_train, Y_train, k=args.cross_val)
+        print(f"Average R^2 score is: {score:.4f}")
+
+    elif args.mode == "final":
+        X_test, _ = read_csv(f"{args.data_dir}/{TEST_DATA_PATH}")
+        if X_test is None:
+            raise RuntimeError("There was a problem with reading CSV data")
+
+        # Save test IDs as we need to add them to the submission file
+        test_ids = X_test[:, 0]
+        X_test = X_test[:, 1:]
+
+        X_test = imputer.transform(X_test)
+        X_test = X_test[:, preserve]
+
+        if args.pca:
+            X_test = pca.transform(X_test)
+
+        __finalise_model(model, X_train, Y_train, X_test, test_ids, args.output)
+
+    else:
+        raise ValueError(f"Invalid mode: {args.mode}")
 
 
 def __log_to_tensorboard(env):
@@ -87,33 +111,103 @@ def __log_to_tensorboard(env):
         tensorboard_writer.add_scalar(name, value, env.iteration)
 
 
-def __evaluate_xgb_model(
-    args: Namespace, X_train: CSVData, Y_train: CSVData, X_test: CSVData, test_ids
-):
-    model = xgb.XGBRegressor()
-
-    if args.mode == "eval":
-        # Returns an array of the k cross-validation R^2 scores
-        scores = cross_val_score(model, X_train, Y_train, cv=args.cross_val, scoring="r2")
-        avg_score = np.mean(scores)
-        print(f"Average R^2 score is: {avg_score:.4f}")
-    elif args.mode == "final":
-        print()
-        model.fit(X_train, Y_train, eval_set=[(X_train, Y_train)], callbacks=[__log_to_tensorboard])
-
-        feature_importances = model.get_booster().get_score(importance_type="gain").items()
-
-        feature_importances = sorted(feature_importances, key=lambda tuple: tuple[1], reverse=True)
-        print("\n10 most important features:")
-        print(feature_importances[:10])
-        print("\n10 least important features:")
-        print(feature_importances[:-10:-1])
-
-        Y_pred = model.predict(X_test)
-        submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
-        create_submission_file(args.output, submission, header=("id", "y"))
+def __choose_model(name: str) -> BaseRegressor:
+    """Choose a model given the name."""
+    if name == "xgb":
+        return xgb.XGBRegressor()
+    elif name == "nn":
+        # TODO: This should ideally do:
+        # return NNRegressor(param_1, param_2, ...)
+        raise NotImplementedError(f"'{name}' model not implemented")
     else:
-        raise ValueError(f"Invalid mode: {args.mode}")
+        raise ValueError(f"Invalid model name: {name}")
+
+
+def evaluate_model(model: BaseRegressor, X_train: CSVData, Y_train: CSVData, k: int) -> float:
+    """Perform cross-validation on the given dataset and return the R^2 score.
+
+    Parameters
+    ----------
+    model: The regressor model
+    X_train: The training data
+    Y_train: The training labels
+    k: The number of folds in k-fold cross-validation
+
+    Returns
+    -------
+    The R^2 validation score
+    """
+    # Returns an array of the k cross-validation R^2 scores
+    scores = cross_val_score(model, X_train, Y_train, cv=k, scoring="r2")
+    avg_score = np.mean(scores)
+    return avg_score
+
+
+def __select_features_correlation(
+    X_train, Y_train, minimum_target_correlation=0.001, maximum_mutual_correlation=0.90
+):
+    """Determine which features should be removed based on mutual/target correlation.
+
+    Parameters
+    ----------
+    X_train: The training data
+    Y_train: The corresponding labels
+    minimum_target_correlation: Features with less corr with the target should be removed
+    maximum_mutual_correlation: Features with more corr with other feature should be removed
+
+    Returns
+    -------
+    A list indicating which feature should be preserved and which not
+    """
+    df = pd.concat([pd.DataFrame(X_train), pd.DataFrame(Y_train)], axis=1)
+
+    cor = df.corr()
+
+    cor_target = abs(cor.iloc[-1])[:-1]
+    preserve = cor_target >= minimum_target_correlation
+
+    # For every feature, see if there is another feauture with which it has high correlation
+    for c in range(X_train.shape[1]):
+        for f in range(c + 1, X_train.shape[1]):
+            if cor.iloc[f, c] > maximum_mutual_correlation:
+                preserve[c] = False
+                break
+
+    return preserve
+
+
+def __finalise_model(
+    model: BaseRegressor,
+    X_train: CSVData,
+    Y_train: CSVData,
+    X_test: CSVData,
+    test_ids: CSVData,
+    output: str,
+) -> None:
+    """Train the model on the complete data and generate the submission file.
+
+    Parameters
+    ----------
+    model: The regressor model
+    X_train: The training data
+    Y_train: The training labels
+    X_test: The test data
+    test_ids: The IDs for the test data
+    """
+    print()
+    model.fit(X_train, Y_train, eval_set=[(X_train, Y_train)], callbacks=[__log_to_tensorboard])
+
+    feature_importances = model.get_booster().get_score(importance_type="gain").items()
+
+    feature_importances = sorted(feature_importances, key=lambda tuple: tuple[1], reverse=True)
+    print("\n10 most important features:")
+    print(feature_importances[:10])
+    print("\n10 least important features:")
+    print(feature_importances[:-11:-1])
+
+    Y_pred = model.predict(X_test)
+    submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
+    create_submission_file(output, submission, header=("id", "y"))
 
 
 def __evaluate_nn_model(X_train, Y_train):
@@ -183,6 +277,17 @@ if __name__ == "__main__":
         choices=["eval", "final"],
         default="eval",
         help="whether to evaluate using cross-validation or do final training to generate output",
+    )
+    parser.add_argument(
+        "--pca",
+        action="store_true",
+        help="whether to use PCA",
+    )
+    parser.add_argument(
+        "--model",
+        choices=["xgb", "nn"],
+        default="xgb",
+        help="the choice of model to train",
     )
     parser.add_argument(
         "-k",
