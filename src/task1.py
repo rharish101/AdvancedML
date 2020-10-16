@@ -2,7 +2,7 @@
 """The entry point for the scripts for Task 1."""
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from datetime import datetime
-from typing import Any
+from typing import Any, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -50,26 +50,7 @@ def __main(args: Namespace) -> None:
     if args.diagnose:
         __run_data_diagnostics(X_train, Y_train, header=X_header or ())
 
-    # Remove training IDs, as they are in sorted order for training data
-    X_train = X_train[:, 1:]
-    Y_train = Y_train[:, 1:]
-
-    # We can substitute this for a more complex imputer later on
-    imputer = SimpleImputer(strategy="median")
-    X_train_w_outliers = imputer.fit_transform(X_train)
-
-    # Use LOF for outlier detection
-    outliers = LocalOutlierFactor(contamination=0.09).fit_predict(X_train_w_outliers)
-
-    # Take out the outliers
-    X_train = X_train[outliers == 1]
-    Y_train = Y_train[outliers == 1]
-
-    # (Re-)impute the data without the outliers
-    X_train = imputer.fit_transform(X_train)
-
-    preserve = __select_features_correlation(X_train, Y_train)
-    X_train = X_train[:, preserve]
+    X_train, Y_train, imputer, preserve = preprocess(X_train, Y_train)
 
     if args.pca:
         pca = PCA()
@@ -104,6 +85,47 @@ def __main(args: Namespace) -> None:
 
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
+
+
+def preprocess(
+    X_train: CSVData, Y_train: CSVData
+) -> Tuple[CSVData, CSVData, SimpleImputer, List[bool]]:
+    """Preprocess the data.
+
+    Parameters
+    ----------
+    X_train: The training data
+    Y_train: The training labels
+
+    Returns
+    -------
+    The preprocessed training data
+    The preprocessed training labels
+    The imputer for missing values
+    The list of booleans indicating which features to preserve
+    """
+    # Remove training IDs, as they are in sorted order for training data
+    X_train = X_train[:, 1:]
+    Y_train = Y_train[:, 1:]
+
+    # We can substitute this for a more complex imputer later on
+    imputer = SimpleImputer(strategy="median")
+    X_train_w_outliers = imputer.fit_transform(X_train)
+
+    # Use LOF for outlier detection
+    outliers = LocalOutlierFactor(contamination=0.09).fit_predict(X_train_w_outliers)
+
+    # Take out the outliers
+    X_train = X_train[outliers == 1]
+    Y_train = Y_train[outliers == 1]
+
+    # (Re-)impute the data without the outliers
+    X_train = imputer.fit_transform(X_train)
+
+    preserve = __select_features_correlation(X_train, Y_train)
+    X_train = X_train[:, preserve]
+
+    return X_train, Y_train, imputer, preserve
 
 
 def __log_to_tensorboard(env):
