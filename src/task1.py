@@ -2,13 +2,15 @@
 """The entry point for the scripts for Task 1."""
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
 import xgboost as xgb
-from sklearn.decomposition import PCA
+import yaml
+from hyperopt import fmin, hp, tpe
+from hyperopt.pyll.base import Apply as Space
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import LocalOutlierFactor
@@ -33,6 +35,18 @@ TRAINING_DATA_NAME: Final[str] = "X_train.csv"
 TRAINING_LABELS_NAME: Final[str] = "y_train.csv"
 TEST_DATA_PATH: Final[str] = "X_test.csv"
 
+# Search distributions for hyper-parameters
+SPACE: Final = {
+    "n_neighbors": hp.randint("n_neighbors", 30),
+    "contamination": hp.uniform("contamination", 0.0, 0.5),
+    "min_tgt_corr": hp.uniform("min_tgt_corr", 0.0, 0.01),
+    "max_mutual_corr": hp.uniform("max_mutual_corr", 0.8, 1.0),
+    "n_estimators": hp.quniform("n_estimators", 10, 500, 1),
+    "max_depth": hp.quniform("max_depth", 2, 20, 1),
+    "learning_rate": hp.lognormal("learning_rate", -1.0, 1.0),
+    "reg_lambda": hp.lognormal("reg_lambda", 1.0, 1.0),
+}
+
 torch.device("cuda:0")
 tensorboard_writer = SummaryWriter(
     log_dir="logs/training" + datetime.now().strftime("-%Y%m%d-%H%M%S")
@@ -40,6 +54,11 @@ tensorboard_writer = SummaryWriter(
 
 
 def __main(args: Namespace) -> None:
+    # Load hyper-parameters, if a config exists
+    with open(args.config, "r") as conf_file:
+        config = yaml.safe_load(conf_file)
+    config = {} if config is None else config
+
     # Read in data
     X_train, X_header = read_csv(f"{args.data_dir}/{TRAINING_DATA_NAME}")
     Y_train, _ = read_csv(f"{args.data_dir}/{TRAINING_LABELS_NAME}")
@@ -50,36 +69,37 @@ def __main(args: Namespace) -> None:
     if args.diagnose:
         __run_data_diagnostics(X_train, Y_train, header=X_header or ())
 
-    # Remove training IDs, as they are in sorted order for training data
-    X_train = X_train[:, 1:]
-    Y_train = Y_train[:, 1:]
+    if args.mode == "tune":
 
-    # We can substitute this for a more complex imputer later on
-    imputer = SimpleImputer(strategy="median")
-    X_train_w_outliers = imputer.fit_transform(X_train)
+        def objective(config: Dict[str, Space]) -> float:
+            for key in "n_estimators", "max_depth":
+                config[key] = int(config[key])
+            model = choose_model("xgb", **config)
+            X_train_new, Y_train_new, _, _ = preprocess(X_train, Y_train, **config)
+            # Keep k low for faster evaluation
+            score = evaluate_model(model, X_train_new, Y_train_new, k=5)
+            # We need to maximize score, so minimize the negative
+            return -score
 
-    # Use LOF for outlier detection
-    outliers = LocalOutlierFactor(contamination=0.09).fit_predict(X_train_w_outliers)
+        print("Starting hyper-parameter tuning")
+        best = fmin(objective, SPACE, algo=tpe.suggest, max_evals=args.max_evals)
 
-    # Take out the outliers
-    X_train = X_train[outliers == 1]
-    Y_train = Y_train[outliers == 1]
+        # Convert numpy dtypes to native Python
+        for key, value in best.items():
+            best[key] = value.item()
 
-    # (Re-)impute the data without the outliers
-    X_train = imputer.fit_transform(X_train)
+        with open(args.output, "w") as conf_file:
+            yaml.dump(best, conf_file)
+        print(f"Best parameters saved in {args.output}:")
+        return
 
-    preserve = __select_features_correlation(X_train, Y_train)
-    X_train = X_train[:, preserve]
-
-    if args.pca:
-        pca = PCA()
-        X_train = pca.fit_transform(X_train)
+    X_train, Y_train, imputer, preserve = preprocess(X_train, Y_train, **config)
 
     if args.model == "nn":
         # TODO: This should be removed after the NN model is complete
         __evaluate_nn_model(X_train, Y_train)
     else:
-        model = __choose_model(args.model)
+        model = choose_model(args.model, **config)
 
     if args.mode == "eval":
         score = evaluate_model(model, X_train, Y_train, k=args.cross_val)
@@ -97,13 +117,68 @@ def __main(args: Namespace) -> None:
         X_test = imputer.transform(X_test)
         X_test = X_test[:, preserve]
 
-        if args.pca:
-            X_test = pca.transform(X_test)
-
         __finalise_model(model, X_train, Y_train, X_test, test_ids, args.output)
 
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
+
+
+def preprocess(
+    X_train: CSVData,
+    Y_train: CSVData,
+    n_neighbors: int = 20,
+    contamination: float = 0.09,
+    min_tgt_corr: float = 0.001,
+    max_mutual_corr: float = 0.9,
+    **kwargs,
+) -> Tuple[CSVData, CSVData, SimpleImputer, List[bool]]:
+    """Preprocess the data.
+
+    Parameters
+    ----------
+    X_train: The training data
+    Y_train: The training labels
+    n_neighbors: n_neighbors for LocalOutlierFactor
+    contamination: contamination for LocalOutlierFactor
+    min_tgt_corr: Features with less corr with the target should be removed
+    max_mutual_corr: Features with more corr with other feature should be removed
+
+    Returns
+    -------
+    The preprocessed training data
+    The preprocessed training labels
+    The imputer for missing values
+    The list of booleans indicating which features to preserve
+    """
+    # Remove training IDs, as they are in sorted order for training data
+    X_train = X_train[:, 1:]
+    Y_train = Y_train[:, 1:]
+
+    # We can substitute this for a more complex imputer later on
+    imputer = SimpleImputer(strategy="median")
+    X_train_w_outliers = imputer.fit_transform(X_train)
+
+    # Use LOF for outlier detection
+    outliers = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=contamination).fit_predict(
+        X_train_w_outliers
+    )
+
+    # Take out the outliers
+    X_train = X_train[outliers == 1]
+    Y_train = Y_train[outliers == 1]
+
+    # (Re-)impute the data without the outliers
+    X_train = imputer.fit_transform(X_train)
+
+    preserve = __select_features_correlation(
+        X_train,
+        Y_train,
+        minimum_target_correlation=min_tgt_corr,
+        maximum_mutual_correlation=max_mutual_corr,
+    )
+    X_train = X_train[:, preserve]
+
+    return X_train, Y_train, imputer, preserve
 
 
 def __log_to_tensorboard(env):
@@ -111,10 +186,22 @@ def __log_to_tensorboard(env):
         tensorboard_writer.add_scalar(name, value, env.iteration)
 
 
-def __choose_model(name: str) -> BaseRegressor:
-    """Choose a model given the name."""
+def choose_model(
+    name: str,
+    n_estimators: int = 100,
+    max_depth: int = 6,
+    learning_rate: float = 0.3,
+    reg_lambda: float = 1.0,
+    **kwargs,
+) -> BaseRegressor:
+    """Choose a model given the name and hyper-parameters."""
     if name == "xgb":
-        return xgb.XGBRegressor()
+        return xgb.XGBRegressor(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            learning_rate=learning_rate,
+            reg_lambda=reg_lambda,
+        )
     elif name == "nn":
         # TODO: This should ideally do:
         # return NNRegressor(param_1, param_2, ...)
@@ -194,17 +281,7 @@ def __finalise_model(
     X_test: The test data
     test_ids: The IDs for the test data
     """
-    print()
     model.fit(X_train, Y_train, eval_set=[(X_train, Y_train)], callbacks=[__log_to_tensorboard])
-
-    feature_importances = model.get_booster().get_score(importance_type="gain").items()
-
-    feature_importances = sorted(feature_importances, key=lambda tuple: tuple[1], reverse=True)
-    print("\n10 most important features:")
-    print(feature_importances[:10])
-    print("\n10 least important features:")
-    print(feature_importances[:-11:-1])
-
     Y_pred = model.predict(X_test)
     submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
     create_submission_file(output, submission, header=("id", "y"))
@@ -266,23 +343,7 @@ if __name__ == "__main__":
         default="data/task1",
         help="path to the directory containing the task data",
     )
-    parser.add_argument(
-        "--output",
-        type=str,
-        default="dist/submission1.csv",
-        help="the path by which to save the output CSV (only used in the 'final' mode)",
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["eval", "final"],
-        default="eval",
-        help="whether to evaluate using cross-validation or do final training to generate output",
-    )
-    parser.add_argument(
-        "--pca",
-        action="store_true",
-        help="whether to use PCA",
-    )
+    parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
     parser.add_argument(
         "--model",
         choices=["xgb", "nn"],
@@ -290,11 +351,55 @@ if __name__ == "__main__":
         help="the choice of model to train",
     )
     parser.add_argument(
+        "--config",
+        type=str,
+        default="config/task1.yaml",
+        help="the path to the YAML config containing the hyper-parameters",
+    )
+    subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
+
+    # Sub-parser for k-fold cross-validation
+    eval_parser = subparsers.add_parser(
+        "eval",
+        description="evaluate using k-fold cross-validation",
+        formatter_class=ArgumentDefaultsHelpFormatter,
+    )
+    eval_parser.add_argument(
         "-k",
         "--cross-val",
         type=int,
         default=10,
         help="the k for k-fold cross-validation",
     )
-    parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
+
+    # Sub-parser for final training
+    final_parser = subparsers.add_parser(
+        "final",
+        description="do final training to generate output",
+        formatter_class=ArgumentDefaultsHelpFormatter,
+    )
+    final_parser.add_argument(
+        "--output",
+        type=str,
+        default="dist/submission1.csv",
+        help="the path by which to save the output CSV (only used in the 'final' mode)",
+    )
+
+    # Sub-parser for hyper-param tuning
+    tune_parser = subparsers.add_parser(
+        "tune", description="hyper-parameter tuning", formatter_class=ArgumentDefaultsHelpFormatter
+    )
+    tune_parser.add_argument(
+        "--max-evals",
+        type=int,
+        default=100,
+        help="max. evaluations for hyper-opt",
+    )
+    tune_parser.add_argument(
+        "--output",
+        type=str,
+        default="config/task1-tuned.yaml",
+        help="the path by which to save the tuned hyper-param config",
+    )
+
     __main(parser.parse_args())

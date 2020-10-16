@@ -137,4 +137,4 @@ pip-selfcheck.json
 !.vscode/settings.json.default
 logs/
 data/
-models/
+config/
