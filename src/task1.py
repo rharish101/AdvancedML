@@ -9,7 +9,6 @@ import pandas as pd
 import torch
 import xgboost as xgb
 import yaml
-from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import LocalOutlierFactor
@@ -58,10 +57,6 @@ def __main(args: Namespace) -> None:
 
     X_train, Y_train, imputer, preserve = preprocess(X_train, Y_train, **config)
 
-    if args.pca:
-        pca = PCA()
-        X_train = pca.fit_transform(X_train)
-
     if args.model == "nn":
         # TODO: This should be removed after the NN model is complete
         __evaluate_nn_model(X_train, Y_train)
@@ -83,9 +78,6 @@ def __main(args: Namespace) -> None:
 
         X_test = imputer.transform(X_test)
         X_test = X_test[:, preserve]
-
-        if args.pca:
-            X_test = pca.transform(X_test)
 
         __finalise_model(model, X_train, Y_train, X_test, test_ids, args.output)
 
@@ -314,11 +306,6 @@ if __name__ == "__main__":
         help="path to the directory containing the task data",
     )
     parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
-    parser.add_argument(
-        "--pca",
-        action="store_true",
-        help="whether to use PCA",
-    )
     parser.add_argument(
         "--model",
         choices=["xgb", "nn"],
