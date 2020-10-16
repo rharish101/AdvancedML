@@ -2,13 +2,15 @@
 """The entry point for the scripts for Task 1."""
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from datetime import datetime
-from typing import Any, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
 import xgboost as xgb
 import yaml
+from hyperopt import fmin, hp, tpe
+from hyperopt.pyll.base import Apply as Space
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import LocalOutlierFactor
@@ -33,6 +35,18 @@ TRAINING_DATA_NAME: Final[str] = "X_train.csv"
 TRAINING_LABELS_NAME: Final[str] = "y_train.csv"
 TEST_DATA_PATH: Final[str] = "X_test.csv"
 
+# Search distributions for hyper-parameters
+SPACE: Final = {
+    "n_neighbors": hp.randint("n_neighbors", 30),
+    "contamination": hp.uniform("contamination", 0.0, 0.5),
+    "min_tgt_corr": hp.uniform("min_tgt_corr", 0.0, 0.01),
+    "max_mutual_corr": hp.uniform("max_mutual_corr", 0.8, 1.0),
+    "n_estimators": hp.quniform("n_estimators", 10, 500, 1),
+    "max_depth": hp.quniform("max_depth", 2, 20, 1),
+    "learning_rate": hp.lognormal("learning_rate", -1.0, 1.0),
+    "reg_lambda": hp.lognormal("reg_lambda", 1.0, 1.0),
+}
+
 torch.device("cuda:0")
 tensorboard_writer = SummaryWriter(
     log_dir="logs/training" + datetime.now().strftime("-%Y%m%d-%H%M%S")
@@ -54,6 +68,30 @@ def __main(args: Namespace) -> None:
 
     if args.diagnose:
         __run_data_diagnostics(X_train, Y_train, header=X_header or ())
+
+    if args.mode == "tune":
+
+        def objective(config: Dict[str, Space]) -> float:
+            for key in "n_estimators", "max_depth":
+                config[key] = int(config[key])
+            model = choose_model("xgb", **config)
+            X_train_new, Y_train_new, _, _ = preprocess(X_train, Y_train, **config)
+            # Keep k low for faster evaluation
+            score = evaluate_model(model, X_train_new, Y_train_new, k=5)
+            # We need to maximize score, so minimize the negative
+            return -score
+
+        print("Starting hyper-parameter tuning")
+        best = fmin(objective, SPACE, algo=tpe.suggest, max_evals=args.max_evals)
+
+        # Convert numpy dtypes to native Python
+        for key, value in best.items():
+            best[key] = value.item()
+
+        with open(args.output, "w") as conf_file:
+            yaml.dump(best, conf_file)
+        print(f"Best parameters saved in {args.output}:")
+        return
 
     X_train, Y_train, imputer, preserve = preprocess(X_train, Y_train, **config)
 
@@ -345,6 +383,23 @@ if __name__ == "__main__":
         type=str,
         default="dist/submission1.csv",
         help="the path by which to save the output CSV (only used in the 'final' mode)",
+    )
+
+    # Sub-parser for hyper-param tuning
+    tune_parser = subparsers.add_parser(
+        "tune", description="hyper-parameter tuning", formatter_class=ArgumentDefaultsHelpFormatter
+    )
+    tune_parser.add_argument(
+        "--max-evals",
+        type=int,
+        default=100,
+        help="max. evaluations for hyper-opt",
+    )
+    tune_parser.add_argument(
+        "--output",
+        type=str,
+        default="config/task1-tuned.yaml",
+        help="the path by which to save the tuned hyper-param config",
     )
 
     __main(parser.parse_args())
