@@ -322,7 +322,9 @@ if __name__ == "__main__":
 
     # Sub-parser for k-fold cross-validation
     eval_parser = subparsers.add_parser(
-        "eval", description="evaluate using k-fold cross-validation"
+        "eval",
+        description="evaluate using k-fold cross-validation",
+        formatter_class=ArgumentDefaultsHelpFormatter,
     )
     eval_parser.add_argument(
         "-k",
@@ -334,7 +336,9 @@ if __name__ == "__main__":
 
     # Sub-parser for final training
     final_parser = subparsers.add_parser(
-        "final", description="do final training to generate output"
+        "final",
+        description="do final training to generate output",
+        formatter_class=ArgumentDefaultsHelpFormatter,
     )
     final_parser.add_argument(
         "--output",
