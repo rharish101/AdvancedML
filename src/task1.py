@@ -216,17 +216,7 @@ def __finalise_model(
     X_test: The test data
     test_ids: The IDs for the test data
     """
-    print()
     model.fit(X_train, Y_train, eval_set=[(X_train, Y_train)], callbacks=[__log_to_tensorboard])
-
-    feature_importances = model.get_booster().get_score(importance_type="gain").items()
-
-    feature_importances = sorted(feature_importances, key=lambda tuple: tuple[1], reverse=True)
-    print("\n10 most important features:")
-    print(feature_importances[:10])
-    print("\n10 least important features:")
-    print(feature_importances[:-11:-1])
-
     Y_pred = model.predict(X_test)
     submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
     create_submission_file(output, submission, header=("id", "y"))
