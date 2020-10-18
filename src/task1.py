@@ -91,7 +91,7 @@ def __main(args: Namespace) -> None:
 
         with open(args.output, "w") as conf_file:
             yaml.dump(best, conf_file)
-        print(f"Best parameters saved in {args.output}:")
+        print(f"Best parameters saved in {args.output}")
         return
 
     X_train, Y_train, imputer, preserve = preprocess(X_train, Y_train, **config)
