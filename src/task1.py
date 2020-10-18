@@ -43,7 +43,7 @@ SPACE: Final = {
     "max_mutual_corr": hp.uniform("max_mutual_corr", 0.8, 1.0),
     "n_estimators": hp.quniform("n_estimators", 10, 500, 1),
     "max_depth": hp.quniform("max_depth", 2, 20, 1),
-    "learning_rate": hp.lognormal("learning_rate", -1.0, 1.0),
+    "learning_rate": hp.uniform("learning_rate", 0.001, 1.0),
     "reg_lambda": hp.lognormal("reg_lambda", 1.0, 1.0),
 }
 
