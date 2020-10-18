@@ -37,7 +37,7 @@ TEST_DATA_PATH: Final[str] = "X_test.csv"
 
 # Search distributions for hyper-parameters
 SPACE: Final = {
-    "n_neighbors": hp.randint("n_neighbors", 30),
+    "n_neighbors": hp.randint("n_neighbors", 1, 30),
     "contamination": hp.uniform("contamination", 0.0, 0.5),
     "min_tgt_corr": hp.uniform("min_tgt_corr", 0.0, 0.01),
     "max_mutual_corr": hp.uniform("max_mutual_corr", 0.8, 1.0),
