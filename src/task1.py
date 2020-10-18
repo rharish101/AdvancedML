@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """The entry point for the scripts for Task 1."""
+import os
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from datetime import datetime
 from typing import Any, Dict, List, Tuple, Union
@@ -30,6 +31,7 @@ from utilities.data import (
 from utilities.dataset import DataSet
 from utilities.nn import train_network
 
+SELECTED_FEATURES_PATH: Final[str] = "config/features-task1.txt"
 TASK_DATA_DIRECTORY: Final[str] = "data/task1"
 TRAINING_DATA_NAME: Final[str] = "X_train.csv"
 TRAINING_LABELS_NAME: Final[str] = "y_train.csv"
@@ -103,11 +105,14 @@ def __main(args: Namespace) -> None:
     else:
         model = choose_model(args.model, **config)
 
-    rec_sel = RFECV(model, step=5, cv=10)
-    rec_sel.fit(X_train, Y_train)
-    X_train = X_train[:, rec_sel.support_]
+    selected_features = read_selected_features(X_train.shape[1])
 
     if args.mode == "eval":
+        if args.featureselection:
+            selected_features = feature_selection(model, X_train, Y_train, args.cross_val)
+
+        X_train = X_train[:, selected_features]
+
         score = evaluate_model(model, X_train, Y_train, k=args.cross_val)
         print(f"Average R^2 score is: {score:.4f}")
 
@@ -122,12 +127,49 @@ def __main(args: Namespace) -> None:
 
         X_test = imputer.transform(X_test)
         X_test = X_test[:, preserve]
-        X_test = X_test[:, rec_sel.support_]
+        X_train = X_train[:, selected_features]
 
         __finalise_model(model, X_train, Y_train, X_test, test_ids, args.output)
 
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
+
+
+def read_selected_features(number_of_features):
+    """Read from SELECTED_FEATURES_PATH which features to be select. If nonexistent, selects all.
+
+    Parameters
+    ----------
+    number_of_features: The dimensionality of the data
+
+    Returns
+    -------
+    The list of booleans indicating which features to preserve
+    """
+    if os.path.exists(SELECTED_FEATURES_PATH):
+        return [True if i == 1 else False for i in np.loadtxt(SELECTED_FEATURES_PATH, dtype=int)]
+
+    return [True for i in range(number_of_features)]
+
+
+def feature_selection(model, X_train, Y_train, k):
+    """Determine the features yielding best score, and save them.
+
+    Parameters
+    ----------
+    model: The model that one wishes to use
+    X_train: The training data
+    Y_train: The training labels
+    k: The number of folds in k-fold cross-validation
+
+    Returns
+    -------
+    The list of booleans indicating which features to select
+    """
+    rec_sel = RFECV(model, step=5, cv=k)
+    rec_sel.fit(X_train, Y_train)
+    np.savetxt(SELECTED_FEATURES_PATH, rec_sel.support_, fmt="%d")
+    return rec_sel.support_
 
 
 def preprocess(
@@ -385,6 +427,9 @@ if __name__ == "__main__":
         type=int,
         default=10,
         help="the k for k-fold cross-validation",
+    )
+    eval_parser.add_argument(
+        "--featureselection", action="store_true", help="select the most optimal features"
     )
 
     # Sub-parser for final training
