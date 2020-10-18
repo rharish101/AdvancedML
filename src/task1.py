@@ -2,7 +2,7 @@
 """The entry point for the scripts for Task 1."""
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -72,10 +72,9 @@ def __main(args: Namespace) -> None:
     if args.mode == "tune":
 
         def objective(config: Dict[str, Space]) -> float:
-            for key in "n_neighbors", "n_estimators", "max_depth":
-                config[key] = int(config[key])
-            model = choose_model("xgb", **config)
-            X_train_new, Y_train_new, _, _ = preprocess(X_train, Y_train, **config)
+            config = __clean_hyper_params(config)
+            model = choose_model("xgb", **config)  # type:ignore
+            X_train_new, Y_train_new, _, _ = preprocess(X_train, Y_train, **config)  # type:ignore
             # Keep k low for faster evaluation
             score = evaluate_model(model, X_train_new, Y_train_new, k=5)
             # We need to maximize score, so minimize the negative
@@ -87,6 +86,7 @@ def __main(args: Namespace) -> None:
         # Convert numpy dtypes to native Python
         for key, value in best.items():
             best[key] = value.item()
+        best = __clean_hyper_params(best)
 
         with open(args.output, "w") as conf_file:
             yaml.dump(best, conf_file)
@@ -121,6 +121,14 @@ def __main(args: Namespace) -> None:
 
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
+
+
+def __clean_hyper_params(config: Dict[str, float]) -> Dict[str, Union[float, int]]:
+    """Convert integer value hyper-params from float to int."""
+    cleaned: Dict[str, Union[float, int]] = config.copy()
+    for key in "n_neighbors", "n_estimators", "max_depth":
+        cleaned[key] = int(config[key])
+    return cleaned
 
 
 def preprocess(
