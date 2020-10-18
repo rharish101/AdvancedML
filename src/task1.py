@@ -37,7 +37,7 @@ TEST_DATA_PATH: Final[str] = "X_test.csv"
 # Search distributions for hyper-parameters
 SPACE: Final = {
     "n_neighbors": hp.choice("n_neighbors", range(1, 30)),
-    "contamination": hp.quniform("contamination", 0.0, 0.5, 0.05),
+    "contamination": hp.quniform("contamination", 0.05, 0.5, 0.05),
     "min_tgt_corr": hp.uniform("min_tgt_corr", 0.0, 0.01),
     "max_mutual_corr": hp.uniform("max_mutual_corr", 0.8, 1.0),
     "n_estimators": hp.choice("n_estimators", range(10, 500)),
