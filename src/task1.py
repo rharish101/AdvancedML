@@ -10,7 +10,6 @@ import torch
 import xgboost as xgb
 import yaml
 from hyperopt import fmin, hp, tpe
-from hyperopt.pyll.base import Apply as Space
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import LocalOutlierFactor
@@ -71,8 +70,7 @@ def __main(args: Namespace) -> None:
 
     if args.mode == "tune":
 
-        def objective(config: Dict[str, Space]) -> float:
-            config = __clean_hyper_params(config)
+        def objective(config: Dict[str, Union[float, int]]) -> float:
             model = choose_model("xgb", **config)  # type:ignore
             X_train_new, Y_train_new, _, _ = preprocess(X_train, Y_train, **config)  # type:ignore
             # Keep k low for faster evaluation
@@ -86,7 +84,6 @@ def __main(args: Namespace) -> None:
         # Convert numpy dtypes to native Python
         for key, value in best.items():
             best[key] = value.item()
-        best = __clean_hyper_params(best)
 
         with open(args.output, "w") as conf_file:
             yaml.dump(best, conf_file)
@@ -121,14 +118,6 @@ def __main(args: Namespace) -> None:
 
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
-
-
-def __clean_hyper_params(config: Dict[str, float]) -> Dict[str, Union[float, int]]:
-    """Convert integer value hyper-params from float to int."""
-    cleaned: Dict[str, Union[float, int]] = config.copy()
-    for key in "n_neighbors", "n_estimators", "max_depth":
-        cleaned[key] = int(config[key])
-    return cleaned
 
 
 def preprocess(
