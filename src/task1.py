@@ -37,7 +37,7 @@ TEST_DATA_PATH: Final[str] = "X_test.csv"
 
 # Search distributions for hyper-parameters
 SPACE: Final = {
-    "n_neighbors": hp.randint("n_neighbors", 1, 30),
+    "n_neighbors": hp.quniform("n_neighbors", 1, 30, 1),
     "contamination": hp.uniform("contamination", 0.0, 0.5),
     "min_tgt_corr": hp.uniform("min_tgt_corr", 0.0, 0.01),
     "max_mutual_corr": hp.uniform("max_mutual_corr", 0.8, 1.0),
@@ -72,7 +72,7 @@ def __main(args: Namespace) -> None:
     if args.mode == "tune":
 
         def objective(config: Dict[str, Space]) -> float:
-            for key in "n_estimators", "max_depth":
+            for key in "n_neighbors", "n_estimators", "max_depth":
                 config[key] = int(config[key])
             model = choose_model("xgb", **config)
             X_train_new, Y_train_new, _, _ = preprocess(X_train, Y_train, **config)
