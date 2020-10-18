@@ -76,6 +76,8 @@ def __main(args: Namespace) -> None:
         __run_data_diagnostics(X_train, Y_train, header=X_header or ())
 
     if args.mode == "tune":
+        selected_features = read_selected_features(X_train.shape[1])
+        X_train = X_train[:, selected_features]
 
         def objective(config: Dict[str, Union[float, int]]) -> float:
             model = choose_model("xgb", **config)  # type:ignore
@@ -105,14 +107,13 @@ def __main(args: Namespace) -> None:
     else:
         model = choose_model(args.model, **config)
 
-    selected_features = read_selected_features(X_train.shape[1])
+    if args.featureselection:
+        selected_features = feature_selection(model, X_train, Y_train, args.cross_val)
+    else:
+        selected_features = read_selected_features(X_train.shape[1])
+    X_train = X_train[:, selected_features]
 
     if args.mode == "eval":
-        if args.featureselection:
-            selected_features = feature_selection(model, X_train, Y_train, args.cross_val)
-
-        X_train = X_train[:, selected_features]
-
         score = evaluate_model(model, X_train, Y_train, k=args.cross_val)
         print(f"Average R^2 score is: {score:.4f}")
 
