@@ -43,6 +43,10 @@ SPACE: Final = {
     "n_estimators": hp.choice("n_estimators", range(10, 500)),
     "max_depth": hp.choice("max_depth", range(2, 20)),
     "learning_rate": hp.quniform("learning_rate", 0.01, 1.0, 0.01),
+    "gamma": hp.uniform("gamma", 0.0, 1.0),
+    "min_child_weight": hp.uniform("min_child_weight", 1, 8),
+    "subsample": hp.uniform("subsample", 0.8, 1),
+    "colsample_bytree": hp.quniform("colsample_bytree", 0.5, 1.0, 0.05),
     "reg_lambda": hp.lognormal("reg_lambda", 1.0, 1.0),
 }
 
@@ -188,6 +192,10 @@ def choose_model(
     n_estimators: int = 100,
     max_depth: int = 6,
     learning_rate: float = 0.3,
+    gamma: float = 0.0,
+    min_child_weight: float = 1.0,
+    subsample: float = 1.0,
+    colsample_bytree: float = 1.0,
     reg_lambda: float = 1.0,
     **kwargs,
 ) -> BaseRegressor:
@@ -197,6 +205,10 @@ def choose_model(
             n_estimators=n_estimators,
             max_depth=max_depth,
             learning_rate=learning_rate,
+            gamma=gamma,
+            min_child_weight=min_child_weight,
+            subsample=subsample,
+            colsample_bytree=colsample_bytree,
             reg_lambda=reg_lambda,
         )
     elif name == "nn":
