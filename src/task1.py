@@ -4,6 +4,7 @@ import os
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from datetime import datetime
 from typing import Any, Dict, List, Tuple, Union
+from warnings import warn
 
 import numpy as np
 import pandas as pd
@@ -31,7 +32,6 @@ from utilities.data import (
 from utilities.dataset import DataSet
 from utilities.nn import train_network
 
-SELECTED_FEATURES_PATH: Final[str] = "config/features-task1.txt"
 TASK_DATA_DIRECTORY: Final[str] = "data/task1"
 TRAINING_DATA_NAME: Final[str] = "X_train.csv"
 TRAINING_LABELS_NAME: Final[str] = "y_train.csv"
@@ -76,7 +76,7 @@ def __main(args: Namespace) -> None:
         __run_data_diagnostics(X_train, Y_train, header=X_header or ())
 
     if args.mode == "tune":
-        selected_features = read_selected_features(X_train.shape[1])
+        selected_features = read_selected_features(args.features, X_train.shape[1])
         X_train = X_train[:, selected_features]
 
         def objective(config: Dict[str, Union[float, int]]) -> float:
@@ -107,10 +107,13 @@ def __main(args: Namespace) -> None:
     else:
         model = choose_model(args.model, **config)
 
-    if args.featureselection:
-        selected_features = feature_selection(model, X_train, Y_train, args.cross_val)
+    if args.mode == "eval" and args.train_features:
+        print("Training feature selection model")
+        selected_features = feature_selection(
+            model, X_train, Y_train, args.cross_val, args.features
+        )
     else:
-        selected_features = read_selected_features(X_train.shape[1])
+        selected_features = read_selected_features(args.features, X_train.shape[1])
     X_train = X_train[:, selected_features]
 
     if args.mode == "eval":
@@ -136,24 +139,28 @@ def __main(args: Namespace) -> None:
         raise ValueError(f"Invalid mode: {args.mode}")
 
 
-def read_selected_features(number_of_features):
+def read_selected_features(features_path: str, number_of_features: int) -> List[bool]:
     """Read from SELECTED_FEATURES_PATH which features to be select. If nonexistent, selects all.
 
     Parameters
     ----------
+    features_path: The path to the saved features
     number_of_features: The dimensionality of the data
 
     Returns
     -------
     The list of booleans indicating which features to preserve
     """
-    if os.path.exists(SELECTED_FEATURES_PATH):
-        return [True if i == 1 else False for i in np.loadtxt(SELECTED_FEATURES_PATH, dtype=int)]
+    if os.path.exists(features_path):
+        return [True if i == 1 else False for i in np.loadtxt(features_path, dtype=int)]
+    else:
+        warn(f"No saved features found at: {features_path}. All features will be kept.")
+        return [True for i in range(number_of_features)]
 
-    return [True for i in range(number_of_features)]
 
-
-def feature_selection(model, X_train, Y_train, k):
+def feature_selection(
+    model: BaseRegressor, X_train: CSVData, Y_train: CSVData, k: int, features_path: str
+) -> List[bool]:
     """Determine the features yielding best score, and save them.
 
     Parameters
@@ -162,6 +169,7 @@ def feature_selection(model, X_train, Y_train, k):
     X_train: The training data
     Y_train: The training labels
     k: The number of folds in k-fold cross-validation
+    features_path: The path where to save the features
 
     Returns
     -------
@@ -169,7 +177,7 @@ def feature_selection(model, X_train, Y_train, k):
     """
     rec_sel = RFECV(model, step=5, cv=k)
     rec_sel.fit(X_train, Y_train)
-    np.savetxt(SELECTED_FEATURES_PATH, rec_sel.support_, fmt="%d")
+    np.savetxt(features_path, rec_sel.support_, fmt="%d")
     return rec_sel.support_
 
 
@@ -415,7 +423,10 @@ if __name__ == "__main__":
         help="the path to the YAML config containing the hyper-parameters",
     )
     parser.add_argument(
-        "--featureselection", action="store_true", help="whether to train the most optimal features"
+        "--features",
+        type=str,
+        default="config/features-task1.txt",
+        help="where the most optimal features are stored",
     )
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
 
@@ -431,6 +442,11 @@ if __name__ == "__main__":
         type=int,
         default=10,
         help="the k for k-fold cross-validation",
+    )
+    eval_parser.add_argument(
+        "--train-features",
+        action="store_true",
+        help="whether to train the most optimal features",
     )
 
     # Sub-parser for final training
