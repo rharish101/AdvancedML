@@ -414,6 +414,9 @@ if __name__ == "__main__":
         default="config/task1.yaml",
         help="the path to the YAML config containing the hyper-parameters",
     )
+    parser.add_argument(
+        "--featureselection", action="store_true", help="whether to train the most optimal features"
+    )
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
 
     # Sub-parser for k-fold cross-validation
@@ -428,9 +431,6 @@ if __name__ == "__main__":
         type=int,
         default=10,
         help="the k for k-fold cross-validation",
-    )
-    eval_parser.add_argument(
-        "--featureselection", action="store_true", help="select the most optimal features"
     )
 
     # Sub-parser for final training
