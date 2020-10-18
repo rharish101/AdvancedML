@@ -10,6 +10,7 @@ import torch
 import xgboost as xgb
 import yaml
 from hyperopt import fmin, hp, tpe
+from sklearn.feature_selection import RFECV
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import LocalOutlierFactor
@@ -102,6 +103,10 @@ def __main(args: Namespace) -> None:
     else:
         model = choose_model(args.model, **config)
 
+    rec_sel = RFECV(model, step=5, cv=10)
+    rec_sel.fit(X_train, Y_train)
+    X_train = X_train[:, rec_sel.support_]
+
     if args.mode == "eval":
         score = evaluate_model(model, X_train, Y_train, k=args.cross_val)
         print(f"Average R^2 score is: {score:.4f}")
@@ -117,6 +122,7 @@ def __main(args: Namespace) -> None:
 
         X_test = imputer.transform(X_test)
         X_test = X_test[:, preserve]
+        X_test = X_test[:, rec_sel.support_]
 
         __finalise_model(model, X_train, Y_train, X_test, test_ids, args.output)
 
