@@ -94,9 +94,9 @@ def __main(args: Namespace) -> None:
         for key, value in best.items():
             best[key] = value.item()
 
-        with open(args.output, "w") as conf_file:
+        with open(args.config, "w") as conf_file:
             yaml.dump(best, conf_file)
-        print(f"Best parameters saved in {args.output}")
+        print(f"Best parameters saved in {args.config}")
         return
 
     X_train, Y_train, imputer, preserve = preprocess(X_train, Y_train, **config)
@@ -420,7 +420,7 @@ if __name__ == "__main__":
         "--config",
         type=str,
         default="config/task1.yaml",
-        help="the path to the YAML config containing the hyper-parameters",
+        help="the path to the YAML config for the hyper-parameters",
     )
     parser.add_argument(
         "--features",
@@ -471,12 +471,6 @@ if __name__ == "__main__":
         type=int,
         default=200,
         help="max. evaluations for hyper-opt",
-    )
-    tune_parser.add_argument(
-        "--output",
-        type=str,
-        default="config/task1-tuned.yaml",
-        help="the path by which to save the tuned hyper-param config",
     )
 
     __main(parser.parse_args())
