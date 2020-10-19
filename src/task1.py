@@ -60,11 +60,6 @@ tensorboard_writer = SummaryWriter(
 
 
 def __main(args: Namespace) -> None:
-    # Load hyper-parameters, if a config exists
-    with open(args.config, "r") as conf_file:
-        config = yaml.safe_load(conf_file)
-    config = {} if config is None else config
-
     # Read in data
     X_train, X_header = read_csv(f"{args.data_dir}/{TRAINING_DATA_NAME}")
     Y_train, _ = read_csv(f"{args.data_dir}/{TRAINING_LABELS_NAME}")
@@ -98,6 +93,12 @@ def __main(args: Namespace) -> None:
             yaml.dump(best, conf_file)
         print(f"Best parameters saved in {args.config}")
         return
+
+    # Load hyper-parameters, if a config exists
+    if args.mode != "tune":
+        with open(args.config, "r") as conf_file:
+            config = yaml.safe_load(conf_file)
+        config = {} if config is None else config
 
     X_train, Y_train, imputer, preserve = preprocess(X_train, Y_train, **config)
 
