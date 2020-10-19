@@ -41,8 +41,6 @@ TEST_DATA_PATH: Final[str] = "X_test.csv"
 SPACE: Final = {
     "n_neighbors": hp.choice("n_neighbors", range(1, 30)),
     "contamination": hp.quniform("contamination", 0.05, 0.5, 0.05),
-    "min_tgt_corr": hp.uniform("min_tgt_corr", 0.0, 0.01),
-    "max_mutual_corr": hp.uniform("max_mutual_corr", 0.8, 1.0),
     "n_estimators": hp.choice("n_estimators", range(10, 500)),
     "max_depth": hp.choice("max_depth", range(2, 20)),
     "learning_rate": hp.quniform("learning_rate", 0.01, 1.0, 0.01),
@@ -75,7 +73,7 @@ def __main(args: Namespace) -> None:
 
         def objective(config: Dict[str, Union[float, int]]) -> float:
             model = choose_model("xgb", **config)  # type:ignore
-            X_train_new, Y_train_new, _, _ = preprocess(X_train, Y_train, **config)  # type:ignore
+            X_train_new, Y_train_new, _ = preprocess(X_train, Y_train, **config)  # type:ignore
             X_train_new = X_train_new[:, selected_features]
             # Keep k low for faster evaluation
             score = evaluate_model(model, X_train_new, Y_train_new, k=5)
@@ -99,13 +97,14 @@ def __main(args: Namespace) -> None:
         config = yaml.safe_load(conf_file)
     config = {} if config is None else config
 
-    X_train, Y_train, imputer, preserve = preprocess(X_train, Y_train, **config)
-
     if args.model == "nn":
         # TODO: This should be removed after the NN model is complete
         __evaluate_nn_model(X_train, Y_train)
     else:
         model = choose_model(args.model, **config)
+
+    # Preprocess before feature selection
+    X_train, Y_train, imputer = preprocess(X_train, Y_train, **config)
 
     if args.mode == "eval" and args.train_features:
         print("Training feature selection model")
@@ -130,8 +129,7 @@ def __main(args: Namespace) -> None:
         X_test = X_test[:, 1:]
 
         X_test = imputer.transform(X_test)
-        X_test = X_test[:, preserve]
-        X_train = X_train[:, selected_features]
+        X_test = X_test[:, selected_features]
 
         __finalise_model(model, X_train, Y_train, X_test, test_ids, args.output)
 
@@ -186,10 +184,8 @@ def preprocess(
     Y_train: CSVData,
     n_neighbors: int = 20,
     contamination: float = 0.09,
-    min_tgt_corr: float = 0.001,
-    max_mutual_corr: float = 0.9,
     **kwargs,
-) -> Tuple[CSVData, CSVData, SimpleImputer, List[bool]]:
+) -> Tuple[CSVData, CSVData, SimpleImputer]:
     """Preprocess the data.
 
     Parameters
@@ -206,7 +202,6 @@ def preprocess(
     The preprocessed training data
     The preprocessed training labels
     The imputer for missing values
-    The list of booleans indicating which features to preserve
     """
     # Remove training IDs, as they are in sorted order for training data
     X_train = X_train[:, 1:]
@@ -228,15 +223,7 @@ def preprocess(
     # (Re-)impute the data without the outliers
     X_train = imputer.fit_transform(X_train)
 
-    preserve = __select_features_correlation(
-        X_train,
-        Y_train,
-        minimum_target_correlation=min_tgt_corr,
-        maximum_mutual_correlation=max_mutual_corr,
-    )
-    X_train = X_train[:, preserve]
-
-    return X_train, Y_train, imputer, preserve
+    return X_train, Y_train, imputer
 
 
 def __log_to_tensorboard(env):
