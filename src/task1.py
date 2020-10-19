@@ -72,11 +72,11 @@ def __main(args: Namespace) -> None:
 
     if args.mode == "tune":
         selected_features = read_selected_features(args.features, X_train.shape[1])
-        X_train = X_train[:, selected_features]
 
         def objective(config: Dict[str, Union[float, int]]) -> float:
             model = choose_model("xgb", **config)  # type:ignore
             X_train_new, Y_train_new, _, _ = preprocess(X_train, Y_train, **config)  # type:ignore
+            X_train_new = X_train_new[:, selected_features]
             # Keep k low for faster evaluation
             score = evaluate_model(model, X_train_new, Y_train_new, k=5)
             # We need to maximize score, so minimize the negative
@@ -95,10 +95,9 @@ def __main(args: Namespace) -> None:
         return
 
     # Load hyper-parameters, if a config exists
-    if args.mode != "tune":
-        with open(args.config, "r") as conf_file:
-            config = yaml.safe_load(conf_file)
-        config = {} if config is None else config
+    with open(args.config, "r") as conf_file:
+        config = yaml.safe_load(conf_file)
+    config = {} if config is None else config
 
     X_train, Y_train, imputer, preserve = preprocess(X_train, Y_train, **config)
 
