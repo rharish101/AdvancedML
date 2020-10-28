@@ -17,9 +17,13 @@ class SimpleNN(nn.Module):
         super(SimpleNN, self).__init__()
 
         self.normalize = nn.BatchNorm1d(feature_count)
-        self.hidden1 = nn.Linear(feature_count, 32)
-        self.hidden2 = nn.Linear(32, 16)
-        self.output = nn.Linear(16, 1)
+        self.hidden1 = nn.Linear(feature_count, 512)
+        self.hidden2 = nn.Linear(512, 512)
+        self.hidden3 = nn.Linear(512, 256)
+        self.hidden4 = nn.Linear(256, 128)
+        self.hidden5 = nn.Linear(128, 64)
+        self.hidden6 = nn.Linear(64, 32)
+        self.output = nn.Linear(32, 1)
 
     def forward(self, x):
         """Do a forward pass in the neural network.
@@ -35,6 +39,10 @@ class SimpleNN(nn.Module):
         x = self.normalize(x)
         x = F.relu(self.hidden1(x))
         x = F.relu(self.hidden2(x))
+        x = F.relu(self.hidden3(x))
+        x = F.relu(self.hidden4(x))
+        x = F.relu(self.hidden5(x))
+        x = F.relu(self.hidden6(x))
         x = self.output(x)
 
         return x

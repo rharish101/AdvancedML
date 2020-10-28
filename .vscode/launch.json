@@ -15,6 +15,6 @@
       "env": {},
       "envFile": "${workspaceRoot}/.env",
       "justMyCode": false,
-      "args": ["--mode", "final"]
+      "args": ["--model", "nn", "final"]
   }],
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""The entry point for the scripts for Task 1."""
+"""The entry point for the scripts for Task 2."""
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from typing import Dict, Union
 
@@ -122,7 +122,7 @@ def __main(args: Namespace) -> None:
 
 if __name__ == "__main__":
     parser = ArgumentParser(
-        description="The entry point for the scripts for Task 1",
+        description="The entry point for the scripts for Task 2",
         formatter_class=ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(

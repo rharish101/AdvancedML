@@ -4,8 +4,10 @@ from os import path
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union, cast
 
-import numpy
+import numpy as np
 from pandas import DataFrame
+from sklearn.impute import SimpleImputer
+from sklearn.neighbors import LocalOutlierFactor
 from tabulate import tabulate
 from tensorboard.plugins import projector
 
@@ -33,14 +35,14 @@ def read_csv(
     Returns
     -------
     Tuple[Union[CSVData, None], Union[CSVHeader, None]]: The tuple of CSV data and header.
-        The data is a numpy array with shape (number_of_rows, number_of_valued_in_a_row)
+        The data is a np array with shape (number_of_rows, number_of_valued_in_a_row)
         containing data from the CSV file (without the header, if specified).
         The header is a tuple of the values in the first row of the CSV data
     """
     print(f'Loading "{file_path}"...')
 
     try:
-        data = numpy.genfromtxt(file_path, delimiter=delimiter, names=includes_header)
+        data = np.genfromtxt(file_path, delimiter=delimiter, names=includes_header)
     except FileNotFoundError:
         print(
             f"Error: could not read CSV file at {file_path} .",
@@ -51,44 +53,42 @@ def read_csv(
     header: Union[CSVHeader, None] = None
     if data is not None:
         header = data.dtype.names
-        # Convert numpy structured array to multi-dimensional array
-        data = data.view(numpy.float).reshape(data.shape + (-1,))
+        # Convert np structured array to multi-dimensional array
+        data = data.view(np.float).reshape(data.shape + (-1,))
 
     return (data, header)
 
 
-def print_array(numpy_array: Array2D, header: CSVHeader) -> None:
-    """Print a preview (first 10 rows) of a numpy array.
+def print_array(np_array: Array2D, header: CSVHeader) -> None:
+    """Print a preview (first 10 rows) of a np array.
 
     Parameters
     ----------
-    numpy_array (NDArray[(Any, Any,), Any]): A 2-dimensional numpy array to print to the
+    np_array (NDArray[(Any, Any,), Any]): A 2-dimensional np array to print to the
         standard output
     """
-    table = tabulate(numpy_array[:10, :10], list(header), tablefmt="github", floatfmt="f")
+    table = tabulate(np_array[:10, :10], list(header), tablefmt="github", floatfmt="f")
 
     print()
     print(table)
 
-    more_columns_text = (
-        f" and {numpy_array.shape[1] - 10} columns" if numpy_array.shape[1] > 10 else ""
-    )
+    more_columns_text = f" and {np_array.shape[1] - 10} columns" if np_array.shape[1] > 10 else ""
 
     print(
-        f"---- {numpy_array.shape[0] - 10} rows{more_columns_text} not shown ----\n"
-        if numpy_array.shape[0] > 10
+        f"---- {np_array.shape[0] - 10} rows{more_columns_text} not shown ----\n"
+        if np_array.shape[0] > 10
         else ""
     )
 
 
-def print_array_statistics(numpy_array: Array2D) -> None:
+def print_array_statistics(np_array: Array2D) -> None:
     """Print some statistics about the given data using Pandas.
 
     Parameters
     ----------
-    numpy_array (NDArray[(Any, Any,), Any]): The data to print statistics about
+    np_array (NDArray[(Any, Any,), Any]): The data to print statistics about
     """
-    data_frame = DataFrame(numpy_array)
+    data_frame = DataFrame(np_array)
 
     print()
     print(data_frame.iloc[:, :10].describe())
@@ -120,7 +120,7 @@ def create_submission_file(
     """
     Path(file_path).parent.mkdir(parents=True, exist_ok=True)
 
-    numpy.savetxt(
+    np.savetxt(
         file_path,
         data,
         delimiter=delimiter,
@@ -137,7 +137,7 @@ def visualize_data(data: CSVData, ids: List[str], name: str, log_directory: str 
 
     Parameters
     ----------
-    data (CSVData): Numpy array containing the data to be visualized
+    data (CSVData): np array containing the data to be visualized
 
     ids (List[str]): ID for each vector contained in the data array
         (i.e. `len(ids) == `data.shape[0]`)
@@ -156,7 +156,7 @@ def visualize_data(data: CSVData, ids: List[str], name: str, log_directory: str 
     data_file_name = f"{name}.tsv"
     metadata_file_name = f"{name}_metadata.tsv"
 
-    numpy.savetxt(path.join(log_directory, data_file_name), data, delimiter="\t", fmt="%f")
+    np.savetxt(path.join(log_directory, data_file_name), data, delimiter="\t", fmt="%f")
 
     with open(path.join(log_directory, metadata_file_name), "w") as metadata_writer:
         for data_id in ids:
@@ -173,3 +173,76 @@ def visualize_data(data: CSVData, ids: List[str], name: str, log_directory: str 
         f'Run "tensorboard --logdir {log_directory}" and choose PROJECTOR',
         "to see the data visualization\n",
     )
+
+
+def run_data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> None:
+    """Run basic diagnorstics on the given data.
+
+    Parameters
+    ----------
+    data (CSVData): Data to run diagnostics on
+
+    labels (CSVData): Labels corresponding the the given data in the `data` parameter
+
+    header (CSVHeader): Headers corresponding to the given data in the `data`parameter
+    """
+    # Print preview of data
+    print_array(data, header)
+    print_array(labels, header)
+
+    # Print statistics of data
+    print_array_statistics(data)
+    print_array_statistics(labels)
+
+    # Tensorboard will stuck on "computing PCA" if there are non-number values in the array
+    data = np.nan_to_num(data)
+
+    # Create a TensorBoard projector to visualize data
+    visualize_data(data[:, 1:], data[:, 0].astype(int), "input_data")
+
+
+def preprocess(
+    X_train: CSVData,
+    Y_train: CSVData,
+    n_neighbors: int = 20,
+    contamination: float = 0.09,
+    **kwargs,
+) -> Tuple[CSVData, CSVData, SimpleImputer]:
+    """Preprocess the data.
+
+    Parameters
+    ----------
+    X_train: The training data
+    Y_train: The training labels
+    n_neighbors: n_neighbors for LocalOutlierFactor
+    contamination: contamination for LocalOutlierFactor
+    min_tgt_corr: Features with less corr with the target should be removed
+    max_mutual_corr: Features with more corr with other feature should be removed
+
+    Returns
+    -------
+    The preprocessed training data
+    The preprocessed training labels
+    The imputer for missing values
+    """
+    # Remove training IDs, as they are in sorted order for training data
+    X_train = X_train[:, 1:]
+    Y_train = Y_train[:, 1:]
+
+    # We can substitute this for a more complex imputer later on
+    imputer = SimpleImputer(strategy="median")
+    X_train_w_outliers = imputer.fit_transform(X_train)
+
+    # Use LOF for outlier detection
+    outliers = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=contamination).fit_predict(
+        X_train_w_outliers
+    )
+
+    # Take out the outliers
+    X_train = X_train[outliers == 1]
+    Y_train = Y_train[outliers == 1]
+
+    # (Re-)impute the data without the outliers
+    X_train = imputer.fit_transform(X_train)
+
+    return X_train, Y_train, imputer
