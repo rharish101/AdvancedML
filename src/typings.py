@@ -3,7 +3,7 @@ from abc import ABC
 from typing import Any, Tuple
 
 from nptyping import NDArray
-from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 
 # fmt: off
 
@@ -19,4 +19,11 @@ class BaseRegressor(ABC, RegressorMixin, BaseEstimator):
     """Convenient type for a base regressor.
 
     This can be used as a parent class for creating custom regressors.
+    """
+
+
+class BaseClassifier(ABC, ClassifierMixin, BaseEstimator):
+    """Convenient type for a base classifier.
+
+    This can be used as a parent class for creating custom classifiers.
     """

@@ -3,30 +3,22 @@
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from typing import Dict, Union
 
-import torch
 import yaml
 from hyperopt import fmin, hp, tpe
 from typing_extensions import Final
+from xgboost import XGBClassifier
 
-from utilities.data import preprocess, read_csv, run_data_diagnostics
-from utilities.model import (
-    choose_model,
-    evaluate_model,
-    feature_selection,
-    finalize_model,
-    read_selected_features,
-)
-from utilities.nn import evaluate_nn_model
+from typings import BaseClassifier
+from utilities.data import read_csv, run_data_diagnostics
+from utilities.model import evaluate_model, finalize_model
 
-TASK_DATA_DIRECTORY: Final[str] = "data/task1"
+TASK_DATA_DIRECTORY: Final[str] = "data/task2"
 TRAINING_DATA_NAME: Final[str] = "X_train.csv"
 TRAINING_LABELS_NAME: Final[str] = "y_train.csv"
 TEST_DATA_PATH: Final[str] = "X_test.csv"
 
 # Search distributions for hyper-parameters
 SPACE: Final = {
-    "n_neighbors": hp.choice("n_neighbors", range(1, 30)),
-    "contamination": hp.quniform("contamination", 0.05, 0.5, 0.05),
     "n_estimators": hp.choice("n_estimators", range(10, 500)),
     "max_depth": hp.choice("max_depth", range(2, 20)),
     "learning_rate": hp.quniform("learning_rate", 0.01, 1.0, 0.01),
@@ -36,8 +28,6 @@ SPACE: Final = {
     "colsample_bytree": hp.quniform("colsample_bytree", 0.5, 1.0, 0.05),
     "reg_lambda": hp.lognormal("reg_lambda", 1.0, 1.0),
 }
-
-torch.device("cuda:0")
 
 
 def __main(args: Namespace) -> None:
@@ -51,15 +41,16 @@ def __main(args: Namespace) -> None:
     if args.diagnose:
         run_data_diagnostics(X_train, Y_train, header=X_header or ())
 
+    # Remove training IDs, as they are in sorted order for training data
+    X_train = X_train[:, 1:]
+    Y_train = Y_train[:, 1]
+
     if args.mode == "tune":
-        selected_features = read_selected_features(args.features, X_train.shape[1])
 
         def objective(config: Dict[str, Union[float, int]]) -> float:
-            model = choose_model("xgb", **config)  # type:ignore
-            X_train_new, Y_train_new, _ = preprocess(X_train, Y_train, **config)  # type:ignore
-            X_train_new = X_train_new[:, selected_features]
+            model = choose_model(args.model, **config)  # type:ignore
             # Keep k low for faster evaluation
-            score = evaluate_model(model, X_train_new, Y_train_new, k=5)
+            score = evaluate_model(model, X_train, Y_train, k=5, scoring="balanced_accuracy")
             # We need to maximize score, so minimize the negative
             return -score
 
@@ -80,26 +71,12 @@ def __main(args: Namespace) -> None:
         config = yaml.safe_load(conf_file)
     config = {} if config is None else config
 
-    if args.model == "nn":
-        # TODO: This should be removed after the NN model is complete
-        evaluate_nn_model(X_train, Y_train)
-    else:
-        model = choose_model(args.model, **config)
-
-    # Preprocess before feature selection
-    X_train, Y_train, imputer = preprocess(X_train, Y_train, **config)
-
-    if args.mode == "eval" and args.train_features:
-        print("Training feature selection model")
-        selected_features = feature_selection(
-            model, X_train, Y_train, args.cross_val, args.features
-        )
-    else:
-        selected_features = read_selected_features(args.features, X_train.shape[1])
-    X_train = X_train[:, selected_features]
+    model = choose_model(args.model, **config)
 
     if args.mode == "eval":
-        score = evaluate_model(model, X_train, Y_train, k=args.cross_val)
+        score = evaluate_model(
+            model, X_train, Y_train, k=args.cross_val, scoring="balanced_accuracy"
+        )
         print(f"Average R^2 score is: {score:.4f}")
 
     elif args.mode == "final":
@@ -111,13 +88,38 @@ def __main(args: Namespace) -> None:
         test_ids = X_test[:, 0]
         X_test = X_test[:, 1:]
 
-        X_test = imputer.transform(X_test)
-        X_test = X_test[:, selected_features]
-
         finalize_model(model, X_train, Y_train, X_test, test_ids, args.output)
 
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
+
+
+def choose_model(
+    name: str,
+    n_estimators: int = 100,
+    max_depth: int = 6,
+    learning_rate: float = 0.3,
+    gamma: float = 0.0,
+    min_child_weight: float = 1.0,
+    subsample: float = 1.0,
+    colsample_bytree: float = 1.0,
+    reg_lambda: float = 1.0,
+    **ckwargs,
+) -> BaseClassifier:
+    """Choose a model given the name and hyper-parameters."""
+    if name == "xgb":
+        return XGBClassifier(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            learning_rate=learning_rate,
+            gamma=gamma,
+            min_child_weight=min_child_weight,
+            subsample=subsample,
+            colsample_bytree=colsample_bytree,
+            reg_lambda=reg_lambda,
+        )
+    else:
+        raise ValueError(f"Invalid model name: {name}")
 
 
 if __name__ == "__main__":
@@ -128,27 +130,21 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="data/task1",
+        default="data/task2",
         help="path to the directory containing the task data",
     )
     parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
     parser.add_argument(
         "--model",
-        choices=["xgb", "nn"],
+        choices=["xgb"],
         default="xgb",
         help="the choice of model to train",
     )
     parser.add_argument(
         "--config",
         type=str,
-        default="config/task1.yaml",
+        default="config/task2.yaml",
         help="the path to the YAML config for the hyper-parameters",
-    )
-    parser.add_argument(
-        "--features",
-        type=str,
-        default="config/features-task1.txt",
-        help="where the most optimal features are stored",
     )
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
 
@@ -165,11 +161,6 @@ if __name__ == "__main__":
         default=10,
         help="the k for k-fold cross-validation",
     )
-    eval_parser.add_argument(
-        "--train-features",
-        action="store_true",
-        help="whether to train the most optimal features",
-    )
 
     # Sub-parser for final training
     final_parser = subparsers.add_parser(
@@ -180,8 +171,8 @@ if __name__ == "__main__":
     final_parser.add_argument(
         "--output",
         type=str,
-        default="dist/submission1.csv",
-        help="the path by which to save the output CSV (only used in the 'final' mode)",
+        default="dist/submission2.csv",
+        help="the path by which to save the output CSV",
     )
 
     # Sub-parser for hyper-param tuning
