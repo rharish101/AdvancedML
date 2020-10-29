@@ -63,6 +63,7 @@ def finalize_model(
     Y_train: The training labels
     X_test: The test data
     test_ids: The IDs for the test data
+    output: The path where to dump the output
     """
 
     def log_to_tensorboard(env):
