@@ -15,7 +15,7 @@ Array2D = NDArray[(Any, Any,), Any]  # type: ignore
 # fmt: on
 
 
-class BaseRegressor(ABC, BaseEstimator, RegressorMixin):
+class BaseRegressor(ABC, RegressorMixin, BaseEstimator):
     """Convenient type for a base regressor.
 
     This can be used as a parent class for creating custom regressors.
