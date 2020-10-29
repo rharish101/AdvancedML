@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 """The entry point for the scripts for Task 2."""
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
-from typing import Dict, Union
+from typing import Dict, Tuple, Union
 
+import numpy as np
 import yaml
 from hyperopt import fmin, hp, tpe
 from typing_extensions import Final
@@ -27,6 +28,7 @@ SPACE: Final = {
     "subsample": hp.uniform("subsample", 0.8, 1),
     "colsample_bytree": hp.quniform("colsample_bytree", 0.5, 1.0, 0.05),
     "reg_lambda": hp.lognormal("reg_lambda", 1.0, 1.0),
+    "focus": hp.lognormal("focus", 1.0, 1.0),
 }
 
 
@@ -94,6 +96,27 @@ def __main(args: Namespace) -> None:
         raise ValueError(f"Invalid mode: {args.mode}")
 
 
+def __loss(y_true: np.ndarray, y_pred: np.ndarray, focus: float) -> Tuple[np.ndarray, np.ndarray]:
+    """Focal loss: https://arxiv.org/abs/1708.02002."""
+    one_hot = np.zeros_like(y_pred)
+    one_hot[np.arange(len(y_true)), y_true.astype(np.int)] = 1
+
+    soft = np.exp(y_pred - y_pred.max(1, keepdims=True))
+    soft /= soft.sum(1, keepdims=True)
+    diff = one_hot - soft
+
+    grad = focus * (1 - soft) ** (focus - 1) * np.log(soft) * diff
+    grad -= (1 - soft) ** focus * diff
+
+    hess = -focus * (focus - 1) * (1 - soft) ** (focus - 2) * np.log(soft) * soft ** 2 * diff ** 2
+    hess += 2 * focus * (1 - soft) ** (focus - 1) * soft * diff ** 2
+    hess += focus * (1 - soft) ** (focus - 1) * np.log(soft) * soft * diff * (diff - soft)
+    hess += (1 - soft) ** focus * soft * diff
+    hess = np.maximum(hess, np.finfo(hess.dtype).eps)  # numerical stability
+
+    return grad.reshape(-1), hess.reshape(-1)
+
+
 def choose_model(
     name: str,
     n_estimators: int = 100,
@@ -104,11 +127,13 @@ def choose_model(
     subsample: float = 1.0,
     colsample_bytree: float = 1.0,
     reg_lambda: float = 1.0,
-    **ckwargs,
+    focus: float = 1.0,
+    **kwargs,
 ) -> BaseClassifier:
     """Choose a model given the name and hyper-parameters."""
     if name == "xgb":
         return XGBClassifier(
+            objective=lambda y_true, y_pred: __loss(y_true, y_pred, focus=focus),
             n_estimators=n_estimators,
             max_depth=max_depth,
             learning_rate=learning_rate,
