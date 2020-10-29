@@ -158,7 +158,7 @@ if __name__ == "__main__":
         "-k",
         "--cross-val",
         type=int,
-        default=10,
+        default=5,
         help="the k for k-fold cross-validation",
     )
 
