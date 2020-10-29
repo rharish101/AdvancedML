@@ -1,16 +1,19 @@
 #!/usr/bin/env python
 """The entry point for the scripts for Task 1."""
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
-from typing import Dict, Union
+from typing import Dict, Tuple, Union
 
 import torch
 import yaml
 from hyperopt import fmin, hp, tpe
+from sklearn.impute import SimpleImputer
+from sklearn.neighbors import LocalOutlierFactor
 from typing_extensions import Final
+from xgboost import XGBRegressor
 
-from utilities.data import preprocess, read_csv, run_data_diagnostics
+from typings import BaseRegressor, CSVData
+from utilities.data import read_csv, run_data_diagnostics
 from utilities.model import (
-    choose_model,
     evaluate_model,
     feature_selection,
     finalize_model,
@@ -59,7 +62,7 @@ def __main(args: Namespace) -> None:
             X_train_new, Y_train_new, _ = preprocess(X_train, Y_train, **config)  # type:ignore
             X_train_new = X_train_new[:, selected_features]
             # Keep k low for faster evaluation
-            score = evaluate_model(model, X_train_new, Y_train_new, k=5)
+            score = evaluate_model(model, X_train_new, Y_train_new, k=5, scoring="r2")
             # We need to maximize score, so minimize the negative
             return -score
 
@@ -99,7 +102,7 @@ def __main(args: Namespace) -> None:
     X_train = X_train[:, selected_features]
 
     if args.mode == "eval":
-        score = evaluate_model(model, X_train, Y_train, k=args.cross_val)
+        score = evaluate_model(model, X_train, Y_train, k=args.cross_val, scoring="r2")
         print(f"Average R^2 score is: {score:.4f}")
 
     elif args.mode == "final":
@@ -118,6 +121,83 @@ def __main(args: Namespace) -> None:
 
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
+
+
+def preprocess(
+    X_train: CSVData,
+    Y_train: CSVData,
+    n_neighbors: int = 20,
+    contamination: float = 0.09,
+    **kwargs,
+) -> Tuple[CSVData, CSVData, SimpleImputer]:
+    """Preprocess the data.
+
+    Parameters
+    ----------
+    X_train: The training data
+    Y_train: The training labels
+    n_neighbors: n_neighbors for LocalOutlierFactor
+    contamination: contamination for LocalOutlierFactor
+
+    Returns
+    -------
+    The preprocessed training data
+    The preprocessed training labels
+    The imputer for missing values
+    """
+    # Remove training IDs, as they are in sorted order for training data
+    X_train = X_train[:, 1:]
+    Y_train = Y_train[:, 1:]
+
+    # We can substitute this for a more complex imputer later on
+    imputer = SimpleImputer(strategy="median")
+    X_train_w_outliers = imputer.fit_transform(X_train)
+
+    # Use LOF for outlier detection
+    outliers = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=contamination).fit_predict(
+        X_train_w_outliers
+    )
+
+    # Take out the outliers
+    X_train = X_train[outliers == 1]
+    Y_train = Y_train[outliers == 1]
+
+    # (Re-)impute the data without the outliers
+    X_train = imputer.fit_transform(X_train)
+
+    return X_train, Y_train, imputer
+
+
+def choose_model(
+    name: str,
+    n_estimators: int = 100,
+    max_depth: int = 6,
+    learning_rate: float = 0.3,
+    gamma: float = 0.0,
+    min_child_weight: float = 1.0,
+    subsample: float = 1.0,
+    colsample_bytree: float = 1.0,
+    reg_lambda: float = 1.0,
+    **kwargs,
+) -> BaseRegressor:
+    """Choose a model given the name and hyper-parameters."""
+    if name == "xgb":
+        return XGBRegressor(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            learning_rate=learning_rate,
+            gamma=gamma,
+            min_child_weight=min_child_weight,
+            subsample=subsample,
+            colsample_bytree=colsample_bytree,
+            reg_lambda=reg_lambda,
+        )
+    elif name == "nn":
+        # TODO: This should ideally do:
+        # return NNRegressor(param_1, param_2, ...)
+        raise NotImplementedError(f"'{name}' model not implemented")
+    else:
+        raise ValueError(f"Invalid model name: {name}")
 
 
 if __name__ == "__main__":

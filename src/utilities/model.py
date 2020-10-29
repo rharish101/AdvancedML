@@ -1,13 +1,12 @@
 """Utility functions for model-related tasks."""
-
 import os
 from datetime import datetime
-from typing import Any, List
+from typing import Any, Callable, List, Union
 from warnings import warn
 
 import numpy as np
 import pandas as pd
-import xgboost as xgb
+from sklearn.base import BaseEstimator
 from sklearn.feature_selection import RFECV
 from sklearn.model_selection import cross_val_score
 from tensorboardX import SummaryWriter
@@ -20,59 +19,35 @@ tensorboard_writer = SummaryWriter(
 )
 
 
-def choose_model(
-    name: str,
-    n_estimators: int = 100,
-    max_depth: int = 6,
-    learning_rate: float = 0.3,
-    gamma: float = 0.0,
-    min_child_weight: float = 1.0,
-    subsample: float = 1.0,
-    colsample_bytree: float = 1.0,
-    reg_lambda: float = 1.0,
-) -> BaseRegressor:
-    """Choose a model given the name and hyper-parameters."""
-    if name == "xgb":
-        return xgb.XGBRegressor(
-            n_estimators=n_estimators,
-            max_depth=max_depth,
-            learning_rate=learning_rate,
-            gamma=gamma,
-            min_child_weight=min_child_weight,
-            subsample=subsample,
-            colsample_bytree=colsample_bytree,
-            reg_lambda=reg_lambda,
-        )
-    elif name == "nn":
-        # TODO: This should ideally do:
-        # return NNRegressor(param_1, param_2, ...)
-        raise NotImplementedError(f"'{name}' model not implemented")
-    else:
-        raise ValueError(f"Invalid model name: {name}")
-
-
-def evaluate_model(model: BaseRegressor, X_train: CSVData, Y_train: CSVData, k: int) -> float:
+def evaluate_model(
+    model: BaseEstimator,
+    X_train: CSVData,
+    Y_train: CSVData,
+    k: int,
+    scoring: Union[str, Callable[[BaseEstimator, CSVData, CSVData], float]],
+) -> float:
     """Perform cross-validation on the given dataset and return the R^2 score.
 
     Parameters
     ----------
-    model: The regressor model
+    model: The model
     X_train: The training data
     Y_train: The training labels
     k: The number of folds in k-fold cross-validation
+    scoring: The scoring metric to use
 
     Returns
     -------
-    The R^2 validation score
+    The validation score
     """
     # Returns an array of the k cross-validation R^2 scores
-    scores = cross_val_score(model, X_train, Y_train, cv=k, scoring="r2")
+    scores = cross_val_score(model, X_train, Y_train, cv=k, scoring=scoring)
     avg_score = np.mean(scores)
     return avg_score
 
 
 def finalize_model(
-    model: BaseRegressor,
+    model: BaseEstimator,
     X_train: CSVData,
     Y_train: CSVData,
     X_test: CSVData,
@@ -83,7 +58,7 @@ def finalize_model(
 
     Parameters
     ----------
-    model: The regressor model
+    model: The model
     X_train: The training data
     Y_train: The training labels
     X_test: The test data

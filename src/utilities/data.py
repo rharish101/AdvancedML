@@ -1,13 +1,10 @@
 """Contains utilities for data I/O and processing."""
-
 from os import path
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union, cast
 
 import numpy as np
 from pandas import DataFrame
-from sklearn.impute import SimpleImputer
-from sklearn.neighbors import LocalOutlierFactor
 from tabulate import tabulate
 from tensorboard.plugins import projector
 
@@ -199,50 +196,3 @@ def run_data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> N
 
     # Create a TensorBoard projector to visualize data
     visualize_data(data[:, 1:], data[:, 0].astype(int), "input_data")
-
-
-def preprocess(
-    X_train: CSVData,
-    Y_train: CSVData,
-    n_neighbors: int = 20,
-    contamination: float = 0.09,
-    **kwargs,
-) -> Tuple[CSVData, CSVData, SimpleImputer]:
-    """Preprocess the data.
-
-    Parameters
-    ----------
-    X_train: The training data
-    Y_train: The training labels
-    n_neighbors: n_neighbors for LocalOutlierFactor
-    contamination: contamination for LocalOutlierFactor
-    min_tgt_corr: Features with less corr with the target should be removed
-    max_mutual_corr: Features with more corr with other feature should be removed
-
-    Returns
-    -------
-    The preprocessed training data
-    The preprocessed training labels
-    The imputer for missing values
-    """
-    # Remove training IDs, as they are in sorted order for training data
-    X_train = X_train[:, 1:]
-    Y_train = Y_train[:, 1:]
-
-    # We can substitute this for a more complex imputer later on
-    imputer = SimpleImputer(strategy="median")
-    X_train_w_outliers = imputer.fit_transform(X_train)
-
-    # Use LOF for outlier detection
-    outliers = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=contamination).fit_predict(
-        X_train_w_outliers
-    )
-
-    # Take out the outliers
-    X_train = X_train[outliers == 1]
-    Y_train = Y_train[outliers == 1]
-
-    # (Re-)impute the data without the outliers
-    X_train = imputer.fit_transform(X_train)
-
-    return X_train, Y_train, imputer
