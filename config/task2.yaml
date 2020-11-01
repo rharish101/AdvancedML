@@ -6,4 +6,6 @@ min_child_weight: 5.358963004498326
 n_estimators: 462
 reg_lambda: 1.0496317410268725
 subsample: 0.8805410106299012
-focus: 1.0
+focus: 2.0
+alpha_1: 0.5
+alpha_2: 1.0

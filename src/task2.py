@@ -96,10 +96,15 @@ def __main(args: Namespace) -> None:
         raise ValueError(f"Invalid mode: {args.mode}")
 
 
-def __loss(y_true: np.ndarray, y_pred: np.ndarray, focus: float) -> Tuple[np.ndarray, np.ndarray]:
+def __loss(
+    y_true: np.ndarray, y_pred: np.ndarray, focus: float, alpha_1: float, alpha_2: float
+) -> Tuple[np.ndarray, np.ndarray]:
     """Focal loss: https://arxiv.org/abs/1708.02002."""
     one_hot = np.zeros_like(y_pred)
     one_hot[np.arange(len(y_true)), y_true.astype(np.int)] = 1
+
+    weights = np.array([[1.0, alpha_1, alpha_2]])  # 2D for broadcasting
+    weights /= sum(weights)
 
     soft = np.exp(y_pred - y_pred.max(1, keepdims=True))
     soft /= soft.sum(1, keepdims=True)
@@ -109,12 +114,14 @@ def __loss(y_true: np.ndarray, y_pred: np.ndarray, focus: float) -> Tuple[np.nda
 
     grad = focus * one_m_soft ** (focus - 1) * np.log(soft) * diff
     grad -= one_m_soft ** focus * diff
+    grad *= weights
 
     hess = -focus * (focus - 1) * one_m_soft ** (focus - 2) * np.log(soft) * soft ** 2 * diff ** 2
     hess += 2 * focus * one_m_soft ** (focus - 1) * soft * diff ** 2
     hess += focus * one_m_soft ** (focus - 1) * np.log(soft) * soft * diff * (diff - soft)
     hess += one_m_soft ** focus * soft * diff
     hess = np.maximum(hess, np.finfo(hess.dtype).eps)  # numerical stability
+    hess *= weights
 
     return grad.reshape(-1), hess.reshape(-1)
 
@@ -130,12 +137,16 @@ def choose_model(
     colsample_bytree: float = 1.0,
     reg_lambda: float = 1.0,
     focus: float = 1.0,
+    alpha_1: float = 1.0,
+    alpha_2: float = 1.0,
     **kwargs,
 ) -> BaseClassifier:
     """Choose a model given the name and hyper-parameters."""
     if name == "xgb":
         return XGBClassifier(
-            objective=lambda y_true, y_pred: __loss(y_true, y_pred, focus=focus),
+            objective=lambda y_true, y_pred: __loss(
+                y_true, y_pred, focus=focus, alpha_1=alpha_1, alpha_2=alpha_2
+            ),
             n_estimators=n_estimators,
             max_depth=max_depth,
             learning_rate=learning_rate,
