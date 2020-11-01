@@ -65,12 +65,9 @@ def finalize_model(
     test_ids: The IDs for the test data
     output: The path where to dump the output
     """
-
-    def log_to_tensorboard(env):
-        for name, value in env.evaluation_result_list:
-            tensorboard_writer.add_scalar(name, value, env.iteration)
-
-    model.fit(X_train, Y_train, eval_set=[(X_train, Y_train)], callbacks=[log_to_tensorboard])
+    print("Training model...")
+    model.fit(X_train, Y_train)
+    print("Model trained")
     Y_pred = model.predict(X_test)
     submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
     create_submission_file(output, submission, header=("id", "y"))

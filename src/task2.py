@@ -6,6 +6,8 @@ from typing import Dict, Tuple, Union
 import numpy as np
 import yaml
 from hyperopt import fmin, hp, tpe
+from sklearn.ensemble import VotingClassifier
+from sklearn.svm import SVC
 from typing_extensions import Final
 from xgboost import XGBClassifier
 
@@ -19,18 +21,33 @@ TRAINING_LABELS_NAME: Final[str] = "y_train.csv"
 TEST_DATA_PATH: Final[str] = "X_test.csv"
 
 # Search distributions for hyper-parameters
-SPACE: Final = {
+XGB_SPACE: Final = {
     "n_estimators": hp.choice("n_estimators", range(10, 500)),
     "max_depth": hp.choice("max_depth", range(2, 20)),
     "learning_rate": hp.quniform("learning_rate", 0.01, 1.0, 0.01),
-    "gamma": hp.uniform("gamma", 0.0, 1.0),
+    "gamma_xgb": hp.uniform("gamma_xgb", 0.0, 1.0),
     "min_child_weight": hp.uniform("min_child_weight", 1, 8),
     "subsample": hp.uniform("subsample", 0.8, 1),
     "colsample_bytree": hp.quniform("colsample_bytree", 0.5, 1.0, 0.05),
     "reg_lambda": hp.lognormal("reg_lambda", 1.0, 1.0),
+}
+SVM_SPACE: Final = {
+    "C": hp.lognormal("C", 1.0, 1.0),
+    "kernel": hp.choice("kernel", ["poly", "rbf", "sigmoid"]),
+    "gamma_svm": hp.uniform("gamma_svm", 1e-4, 1.0),
+}
+ENSEMBLE_SPACE: Final = {
+    "svm_wt": hp.lognormal("svm_wt", 1.0, 1.0),
+    **XGB_SPACE,
+    **SVM_SPACE,
+}
+SPACE: Final = {
     "focus": hp.lognormal("focus", 1.0, 1.0),
     "alpha_1": hp.lognormal("alpha_1", 1.0, 1.0),
     "alpha_2": hp.lognormal("alpha_2", 1.0, 1.0),
+    "model": hp.choice(
+        "model", [("xgb", XGB_SPACE), ("svm", SVM_SPACE), ("ensemble", ENSEMBLE_SPACE)]
+    ),
 }
 
 
@@ -52,7 +69,7 @@ def __main(args: Namespace) -> None:
     if args.mode == "tune":
 
         def objective(config: Dict[str, Union[float, int]]) -> float:
-            model = choose_model(args.model, **config)  # type:ignore
+            model = choose_model(config["model"][0], **config["model"][1], **config)  # type:ignore
             # Keep k low for faster evaluation
             score = evaluate_model(model, X_train, Y_train, k=5, scoring="balanced_accuracy")
             # We need to maximize score, so minimize the negative
@@ -99,14 +116,11 @@ def __main(args: Namespace) -> None:
 
 
 def __loss(
-    y_true: np.ndarray, y_pred: np.ndarray, focus: float, alpha_1: float, alpha_2: float
+    y_true: np.ndarray, y_pred: np.ndarray, focus: float, weights: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Focal loss: https://arxiv.org/abs/1708.02002."""
     one_hot = np.zeros_like(y_pred)
     one_hot[np.arange(len(y_true)), y_true.astype(np.int)] = 1
-
-    weights = np.array([[1.0, alpha_1, alpha_2]])  # 2D for broadcasting
-    weights /= sum(weights)
 
     soft = np.exp(y_pred - y_pred.max(1, keepdims=True))
     soft /= soft.sum(1, keepdims=True)
@@ -114,6 +128,7 @@ def __loss(
 
     diff = one_hot - soft
     one_m_soft = np.maximum(1 - soft, np.finfo(soft.dtype).eps)  # prevent div-by-0
+    weights = weights.reshape(1, -1)  # 2D for broadcasting
 
     grad = focus * one_m_soft ** (focus - 1) * np.log(soft) * diff
     grad -= one_m_soft ** focus * diff
@@ -134,7 +149,7 @@ def choose_model(
     n_estimators: int = 100,
     max_depth: int = 6,
     learning_rate: float = 0.3,
-    gamma: float = 0.0,
+    gamma_xgb: float = 0.0,
     min_child_weight: float = 1.0,
     subsample: float = 1.0,
     colsample_bytree: float = 1.0,
@@ -142,23 +157,42 @@ def choose_model(
     focus: float = 1.0,
     alpha_1: float = 1.0,
     alpha_2: float = 1.0,
+    C: float = 1.0,
+    kernel: str = "rbf",
+    gamma_svm: float = 1e-3,
+    svm_wt: float = 1.0,
     **kwargs,
 ) -> BaseClassifier:
     """Choose a model given the name and hyper-parameters."""
+    weights = np.array([1.0, alpha_1, alpha_2])  # 2D for broadcasting
+    weights /= sum(weights)
+
+    xgb_model = XGBClassifier(
+        objective=lambda y_true, y_pred: __loss(y_true, y_pred, focus=focus, weights=weights),
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        learning_rate=learning_rate,
+        gamma=gamma_xgb,
+        min_child_weight=min_child_weight,
+        subsample=subsample,
+        colsample_bytree=colsample_bytree,
+        reg_lambda=reg_lambda,
+    )
+    svm_model = SVC(
+        C=C,
+        kernel=kernel,
+        gamma=gamma_svm,
+        class_weight={i: val for i, val in enumerate(weights)},
+    )
+
     if name == "xgb":
-        return XGBClassifier(
-            objective=lambda y_true, y_pred: __loss(
-                y_true, y_pred, focus=focus, alpha_1=alpha_1, alpha_2=alpha_2
-            ),
-            n_estimators=n_estimators,
-            max_depth=max_depth,
-            learning_rate=learning_rate,
-            gamma=gamma,
-            min_child_weight=min_child_weight,
-            subsample=subsample,
-            colsample_bytree=colsample_bytree,
-            reg_lambda=reg_lambda,
-        )
+        return xgb_model
+    elif name == "svm":
+        return svm_model
+    elif name == "ensemble":
+        model_wt = np.array([1.0, svm_wt])
+        model_wt /= sum(model_wt)
+        return VotingClassifier([("xgb", xgb_model), ("svm", svm_model)], weights=model_wt)
     else:
         raise ValueError(f"Invalid model name: {name}")
 
@@ -177,8 +211,8 @@ if __name__ == "__main__":
     parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
     parser.add_argument(
         "--model",
-        choices=["xgb"],
-        default="xgb",
+        choices=["xgb", "svm", "ensemble"],
+        default="svm",
         help="the choice of model to train",
     )
     parser.add_argument(
