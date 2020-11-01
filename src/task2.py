@@ -110,6 +110,7 @@ def __loss(
 
     soft = np.exp(y_pred - y_pred.max(1, keepdims=True))
     soft /= soft.sum(1, keepdims=True)
+    soft = np.maximum(soft, np.finfo(soft.dtype).eps)  # prevent log(0)
 
     diff = one_hot - soft
     one_m_soft = np.maximum(1 - soft, np.finfo(soft.dtype).eps)  # prevent div-by-0
