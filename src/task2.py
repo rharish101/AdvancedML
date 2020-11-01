@@ -29,6 +29,8 @@ SPACE: Final = {
     "colsample_bytree": hp.quniform("colsample_bytree", 0.5, 1.0, 0.05),
     "reg_lambda": hp.lognormal("reg_lambda", 1.0, 1.0),
     "focus": hp.lognormal("focus", 1.0, 1.0),
+    "alpha_1": hp.lognormal("alpha_1", 1.0, 1.0),
+    "alpha_2": hp.lognormal("alpha_2", 1.0, 1.0),
 }
 
 
