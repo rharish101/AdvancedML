@@ -103,16 +103,17 @@ def __loss(y_true: np.ndarray, y_pred: np.ndarray, focus: float) -> Tuple[np.nda
 
     soft = np.exp(y_pred - y_pred.max(1, keepdims=True))
     soft /= soft.sum(1, keepdims=True)
-    soft = np.maximum(soft, np.finfo(soft.dtype).eps)
+
     diff = one_hot - soft
+    one_m_soft = np.maximum(1 - soft, np.finfo(soft.dtype).eps)  # prevent div-by-0
 
-    grad = focus * (1 - soft) ** (focus - 1) * np.log(soft) * diff
-    grad -= (1 - soft) ** focus * diff
+    grad = focus * one_m_soft ** (focus - 1) * np.log(soft) * diff
+    grad -= one_m_soft ** focus * diff
 
-    hess = -focus * (focus - 1) * (1 - soft) ** (focus - 2) * np.log(soft) * soft ** 2 * diff ** 2
-    hess += 2 * focus * (1 - soft) ** (focus - 1) * soft * diff ** 2
-    hess += focus * (1 - soft) ** (focus - 1) * np.log(soft) * soft * diff * (diff - soft)
-    hess += (1 - soft) ** focus * soft * diff
+    hess = -focus * (focus - 1) * one_m_soft ** (focus - 2) * np.log(soft) * soft ** 2 * diff ** 2
+    hess += 2 * focus * one_m_soft ** (focus - 1) * soft * diff ** 2
+    hess += focus * one_m_soft ** (focus - 1) * np.log(soft) * soft * diff * (diff - soft)
+    hess += one_m_soft ** focus * soft * diff
     hess = np.maximum(hess, np.finfo(hess.dtype).eps)  # numerical stability
 
     return grad.reshape(-1), hess.reshape(-1)
