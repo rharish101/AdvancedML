@@ -223,7 +223,7 @@ if __name__ == "__main__":
     tune_parser.add_argument(
         "--max-evals",
         type=int,
-        default=200,
+        default=100,
         help="max. evaluations for hyper-opt",
     )
 
