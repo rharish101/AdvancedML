@@ -79,7 +79,7 @@ def __main(args: Namespace) -> None:
         score = evaluate_model(
             model, X_train, Y_train, k=args.cross_val, scoring="balanced_accuracy"
         )
-        print(f"Average R^2 score is: {score:.4f}")
+        print(f"Average balanced accuracy is: {score:.4f}")
 
     elif args.mode == "final":
         X_test, _ = read_csv(f"{args.data_dir}/{TEST_DATA_PATH}")
@@ -103,6 +103,7 @@ def __loss(y_true: np.ndarray, y_pred: np.ndarray, focus: float) -> Tuple[np.nda
 
     soft = np.exp(y_pred - y_pred.max(1, keepdims=True))
     soft /= soft.sum(1, keepdims=True)
+    soft = np.maximum(soft, np.finfo(soft.dtype).eps)
     diff = one_hot - soft
 
     grad = focus * (1 - soft) ** (focus - 1) * np.log(soft) * diff
