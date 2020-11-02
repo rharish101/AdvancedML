@@ -6,9 +6,12 @@ from warnings import warn
 
 import numpy as np
 import pandas as pd
+from imblearn.combine import SMOTEENN
 from sklearn.base import BaseEstimator
 from sklearn.feature_selection import RFECV
-from sklearn.model_selection import cross_val_score
+from sklearn.metrics import balanced_accuracy_score
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.utils.random import sample_without_replacement
 from tensorboardX import SummaryWriter
 
 from typings import BaseRegressor, CSVData
@@ -19,12 +22,78 @@ tensorboard_writer = SummaryWriter(
 )
 
 
+def evaluate_model_balanced_ensemble(
+    model: BaseEstimator,
+    X_train: CSVData,
+    Y_train: CSVData,
+    k: int,
+    scoring: Union[str, Callable[[BaseEstimator, CSVData, CSVData], float]],
+) -> float:
+    """Perform cross-validation on the given dataset using ensembling to counteract class imbalance.
+
+    Parameters
+    ----------
+    model: The model
+    X_train: The training data
+    Y_train: The training labels
+    k: The number of folds in k-fold cross-validation
+    scoring: The scoring metric to use
+
+    Returns
+    -------
+    The validation score
+    """
+    w_accuracies = []
+    nr_of_classes = len(np.unique(Y_train))
+    majority_class = max(set(Y_train), key=list(Y_train).count)
+
+    kf = StratifiedKFold(n_splits=k, shuffle=True)
+    for train_index, test_index in kf.split(X_train, Y_train):
+        X_train_cv, X_test_cv = X_train[train_index], X_train[test_index]
+        Y_train_cv, Y_test_cv = Y_train[train_index], Y_train[test_index]
+
+        X_majority_class = np.array(
+            [X_train_cv[i] for i in range(len(Y_train_cv)) if Y_train_cv[i] == majority_class]
+        )
+        Y_majority_class = np.array(
+            [Y_train_cv[i] for i in range(len(Y_train_cv)) if Y_train_cv[i] == majority_class]
+        )
+
+        X_minority_class = [
+            X_train_cv[i] for i in range(len(Y_train_cv)) if Y_train_cv[i] != majority_class
+        ]
+        Y_minority_class = [
+            Y_train_cv[i] for i in range(len(Y_train_cv)) if Y_train_cv[i] != majority_class
+        ]
+
+        preds = []
+        for k in range(int(len(X_majority_class) / len(X_minority_class) * (nr_of_classes - 1))):
+            indices = sample_without_replacement(
+                n_population=len(X_majority_class), n_samples=len(X_minority_class)
+            )
+
+            X_train_final = [*X_majority_class[indices], *X_minority_class]
+
+            Y_train_final = [*Y_majority_class[indices], *Y_minority_class]
+
+            model.fit(X_train_final, Y_train_final)
+            preds.append(model.predict(X_test_cv))
+
+        # Take majority vote
+        majority_votes = [max(set(votes), key=votes.count) for votes in zip(*preds)]
+        w_accuracies.append(balanced_accuracy_score(Y_test_cv, majority_votes))
+
+    # Return average balanced accuracy
+    return sum(w_accuracies) / len(w_accuracies)
+
+
 def evaluate_model(
     model: BaseEstimator,
     X_train: CSVData,
     Y_train: CSVData,
     k: int,
     scoring: Union[str, Callable[[BaseEstimator, CSVData, CSVData], float]],
+    smote: bool,
 ) -> float:
     """Perform cross-validation on the given dataset and return the R^2 score.
 
@@ -40,7 +109,22 @@ def evaluate_model(
     -------
     The validation score
     """
-    # Returns an array of the k cross-validation R^2 scores
+    score = 0
+    kf = StratifiedKFold(n_splits=k, shuffle=True)
+    for train_index, test_index in kf.split(X_train, Y_train):
+        X_train_cv, X_test_cv = X_train[train_index], X_train[test_index]
+        Y_train_cv, Y_test_cv = Y_train[train_index], Y_train[test_index]
+
+        if smote:
+            sm = SMOTEENN(random_state=17)
+            X_train_cv, Y_train_cv = sm.fit_resample(X_train_cv, Y_train_cv)
+
+        model.fit(X_train_cv, Y_train_cv)
+        pred = model.predict(X_test_cv)
+        score += balanced_accuracy_score(Y_test_cv, pred)
+
+    return score / k
+
     scores = cross_val_score(model, X_train, Y_train, cv=k, scoring=scoring)
     avg_score = np.mean(scores)
     return avg_score
@@ -53,6 +137,7 @@ def finalize_model(
     X_test: CSVData,
     test_ids: CSVData,
     output: str,
+    smote: bool,
 ) -> None:
     """Train the model on the complete data and generate the submission file.
 
@@ -66,10 +151,72 @@ def finalize_model(
     output: The path where to dump the output
     """
     print("Training model...")
+
+    if smote:
+        sm = SMOTEENN(random_state=17)
+        X_train, Y_train = sm.fit_resample(X_train, Y_train)
+
     model.fit(X_train, Y_train)
     print("Model trained")
     Y_pred = model.predict(X_test)
     submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
+    create_submission_file(output, submission, header=("id", "y"))
+
+
+def finalize_model_balanced_ensemble(
+    model: BaseEstimator,
+    X_train: CSVData,
+    Y_train: CSVData,
+    X_test: CSVData,
+    test_ids: CSVData,
+    output: str,
+) -> None:
+    """Train the model using ensembling to counteract class imbalance.
+
+    Parameters
+    ----------
+    model: The model
+    X_train: The training data
+    Y_train: The training labels
+    X_test: The test data
+    test_ids: The IDs for the test data
+    output: The path where to dump the output
+    """
+    print("Training model...")
+
+    nr_of_classes = len(np.unique(Y_train))
+
+    majority_class = max(set(Y_train), key=Y_train.count)
+
+    X_majority_class = np.array(
+        [X_train[i] for i in range(len(Y_train)) if Y_train[i] == majority_class]
+    )
+    Y_majority_class = np.array(
+        [Y_train[i] for i in range(len(Y_train)) if Y_train[i] == majority_class]
+    )
+
+    X_minority_class = [X_train[i] for i in range(len(Y_train)) if Y_train[i] != majority_class]
+    Y_minority_class = [Y_train[i] for i in range(len(Y_train)) if Y_train[i] != majority_class]
+
+    preds = []
+    for k in range(int(len(X_majority_class) / len(X_minority_class) * (nr_of_classes - 1))):
+        indices = sample_without_replacement(
+            n_population=len(X_majority_class), n_samples=len(X_minority_class), random_state=17
+        )
+
+        X_train_final = [*X_majority_class[indices], *X_minority_class]
+
+        Y_train_final = [*Y_majority_class[indices], *Y_minority_class]
+
+        model.fit(X_train_final, Y_train_final)
+        preds.append(model.predict(X_test))
+
+    # Take majority vote
+    majority_votes = [max(set(votes), key=votes.count) for votes in zip(*preds)]
+
+    print("Model trained")
+
+    submission: Any = np.stack([test_ids, majority_votes], 1)  # Add IDs
     create_submission_file(output, submission, header=("id", "y"))
 
 

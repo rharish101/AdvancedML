@@ -13,7 +13,12 @@ from xgboost import XGBClassifier
 
 from typings import BaseClassifier
 from utilities.data import read_csv, run_data_diagnostics
-from utilities.model import evaluate_model, finalize_model
+from utilities.model import (
+    evaluate_model,
+    evaluate_model_balanced_ensemble,
+    finalize_model,
+    finalize_model_balanced_ensemble,
+)
 
 TASK_DATA_DIRECTORY: Final[str] = "data/task2"
 TRAINING_DATA_NAME: Final[str] = "X_train.csv"
@@ -71,7 +76,15 @@ def __main(args: Namespace) -> None:
         def objective(config: Dict[str, Union[float, int]]) -> float:
             model = choose_model(config["model"][0], **config["model"][1], **config)  # type:ignore
             # Keep k low for faster evaluation
-            score = evaluate_model(model, X_train, Y_train, k=5, scoring="balanced_accuracy")
+            if args.balanced_ensemble:
+                score = evaluate_model_balanced_ensemble(
+                    model, X_train, Y_train, k=5, scoring="balanced_accuracy"
+                )
+            else:
+                score = evaluate_model(
+                    model, X_train, Y_train, k=5, scoring="balanced_accuracy", smote=args.smote
+                )
+
             # We need to maximize score, so minimize the negative
             return -score
 
@@ -95,9 +108,20 @@ def __main(args: Namespace) -> None:
     model = choose_model(args.model, **config)
 
     if args.mode == "eval":
-        score = evaluate_model(
-            model, X_train, Y_train, k=args.cross_val, scoring="balanced_accuracy"
-        )
+        if args.balanced_ensemble:
+            score = evaluate_model_balanced_ensemble(
+                model, X_train, Y_train, k=args.cross_val, scoring="balanced_accuracy"
+            )
+        else:
+            score = evaluate_model(
+                model,
+                X_train,
+                Y_train,
+                k=args.cross_val,
+                scoring="balanced_accuracy",
+                smote=args.smote,
+            )
+
         print(f"Average balanced accuracy is: {score:.4f}")
 
     elif args.mode == "final":
@@ -109,7 +133,10 @@ def __main(args: Namespace) -> None:
         test_ids = X_test[:, 0]
         X_test = X_test[:, 1:]
 
-        finalize_model(model, X_train, Y_train, X_test, test_ids, args.output)
+        if args.balanced_ensemble:
+            finalize_model_balanced_ensemble(model, X_train, Y_train, X_test, test_ids, args.output)
+        else:
+            finalize_model(model, X_train, Y_train, X_test, test_ids, args.output, smote=args.smote)
 
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
@@ -178,6 +205,7 @@ def choose_model(
         colsample_bytree=colsample_bytree,
         reg_lambda=reg_lambda,
     )
+
     svm_model = SVC(
         C=C,
         kernel=kernel,
@@ -209,6 +237,10 @@ if __name__ == "__main__":
         help="path to the directory containing the task data",
     )
     parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
+    parser.add_argument("--smote", action="store_true", help="use SMOTE")
+    parser.add_argument(
+        "--balanced-ensemble", action="store_true", help="use ensembling to obtain balanced sets"
+    )
     parser.add_argument(
         "--model",
         choices=["xgb", "svm", "ensemble"],
