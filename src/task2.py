@@ -18,6 +18,7 @@ from utilities.model import (
     evaluate_model_balanced_ensemble,
     finalize_model,
     finalize_model_balanced_ensemble,
+    visualize_model,
 )
 
 TASK_DATA_DIRECTORY: Final[str] = "data/task2"
@@ -138,6 +139,9 @@ def __main(args: Namespace) -> None:
         else:
             finalize_model(model, X_train, Y_train, X_test, test_ids, args.output, smote=args.smote)
 
+        if args.visual:
+            visualize_model(model, X_train, Y_train)
+
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
 
@@ -254,6 +258,7 @@ if __name__ == "__main__":
         help="the path to the YAML config for the hyper-parameters",
     )
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
+    parser.add_argument("--visual", action="store_true", help="enable model visualizations")
 
     # Sub-parser for k-fold cross-validation
     eval_parser = subparsers.add_parser(

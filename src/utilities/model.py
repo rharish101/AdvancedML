@@ -4,12 +4,16 @@ from datetime import datetime
 from typing import Any, Callable, List, Union
 from warnings import warn
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from imblearn.combine import SMOTEENN
 from sklearn.base import BaseEstimator
 from sklearn.feature_selection import RFECV
-from sklearn.metrics import balanced_accuracy_score
+from sklearn.metrics import (  # plot_precision_recall_curve,; plot_roc_curve,
+    balanced_accuracy_score,
+    plot_confusion_matrix,
+)
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.utils.random import sample_without_replacement
 from tensorboardX import SummaryWriter
@@ -157,6 +161,7 @@ def finalize_model(
         X_train, Y_train = sm.fit_resample(X_train, Y_train)
 
     model.fit(X_train, Y_train)
+
     print("Model trained")
     Y_pred = model.predict(X_test)
     submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
@@ -293,3 +298,20 @@ def select_features_correlation(
                 break
 
     return preserve
+
+
+def visualize_model(model, X_test, Y_test):
+    """Visualize metrics of a model.
+
+    Parameters
+    ----------
+    model: The trained model to get the metrics from
+
+    X_test: Data used to evaluate the model
+
+    Y_test: Data labels for the evaluation data
+    """
+    plot_confusion_matrix(model, X_test, Y_test)
+    # plot_precision_recall_curve(model, X_train, Y_train)
+    # plot_roc_curve(model, X_train, Y_train)
+    plt.show()
