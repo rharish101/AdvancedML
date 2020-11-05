@@ -47,13 +47,11 @@ ENSEMBLE_SPACE: Final = {
     **XGB_SPACE,
     **SVM_SPACE,
 }
+MODEL_SPACE: Final = {"xgb": XGB_SPACE, "svm": SVM_SPACE, "ensemble": ENSEMBLE_SPACE}
 SPACE: Final = {
     "focus": hp.lognormal("focus", 1.0, 1.0),
     "alpha_1": hp.lognormal("alpha_1", 1.0, 1.0),
     "alpha_2": hp.lognormal("alpha_2", 1.0, 1.0),
-    "model": hp.choice(
-        "model", [("xgb", XGB_SPACE), ("svm", SVM_SPACE), ("ensemble", ENSEMBLE_SPACE)]
-    ),
 }
 
 
@@ -75,7 +73,7 @@ def __main(args: Namespace) -> None:
     if args.mode == "tune":
 
         def objective(config: Dict[str, Union[float, int]]) -> float:
-            model = choose_model(config["model"][0], **config["model"][1], **config)  # type:ignore
+            model = choose_model(args.model, **config)  # type:ignore
             # Keep k low for faster evaluation
             if args.balanced_ensemble:
                 score = evaluate_model_balanced_ensemble(
@@ -90,7 +88,8 @@ def __main(args: Namespace) -> None:
             return -score
 
         print("Starting hyper-parameter tuning")
-        best = fmin(objective, SPACE, algo=tpe.suggest, max_evals=args.max_evals)
+        space = {**SPACE, **MODEL_SPACE[args.model]}
+        best = fmin(objective, space, algo=tpe.suggest, max_evals=args.max_evals)
 
         # Convert numpy dtypes to native Python
         for key, value in best.items():
