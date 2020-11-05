@@ -6,6 +6,7 @@ from typing import Dict, Tuple, Union
 import numpy as np
 import yaml
 from hyperopt import fmin, hp, tpe
+from imblearn.over_sampling import SMOTE
 from sklearn.ensemble import VotingClassifier
 from sklearn.svm import SVC
 from typing_extensions import Final
@@ -48,6 +49,14 @@ ENSEMBLE_SPACE: Final = {
     **SVM_SPACE,
 }
 MODEL_SPACE: Final = {"xgb": XGB_SPACE, "svm": SVM_SPACE, "ensemble": ENSEMBLE_SPACE}
+SMOTE_SPACE: Final = {
+    "sampling_strategy": {
+        0: hp.uniform("sampling_0", 0, 1),
+        1: 1.0,  # hardcoding class 1 to be majority
+        2: hp.uniform("sampling_2", 0, 1),
+    },
+    "k_neighbors": hp.choice("k_neighbors", range(1, 10)),
+}
 SPACE: Final = {
     "focus": hp.lognormal("focus", 1.0, 1.0),
     "alpha_1": hp.lognormal("alpha_1", 1.0, 1.0),
@@ -73,6 +82,7 @@ def __main(args: Namespace) -> None:
     if args.mode == "tune":
 
         def objective(config: Dict[str, Union[float, int]]) -> float:
+            smote_fn = get_smote_fn(**config) if args.smote else None  # type:ignore
             model = choose_model(args.model, **config)  # type:ignore
             # Keep k low for faster evaluation
             if args.balanced_ensemble:
@@ -81,14 +91,15 @@ def __main(args: Namespace) -> None:
                 )
             else:
                 score = evaluate_model(
-                    model, X_train, Y_train, k=5, scoring="balanced_accuracy", smote=args.smote
+                    model, X_train, Y_train, k=5, scoring="balanced_accuracy", smote_fn=smote_fn
                 )
 
             # We need to maximize score, so minimize the negative
             return -score
 
         print("Starting hyper-parameter tuning")
-        space = {**SPACE, **MODEL_SPACE[args.model]}
+        smote_space = SMOTE_SPACE if args.smote else {}
+        space = {**SPACE, **MODEL_SPACE[args.model], **smote_space}
         best = fmin(objective, space, algo=tpe.suggest, max_evals=args.max_evals)
 
         # Convert numpy dtypes to native Python
@@ -105,6 +116,7 @@ def __main(args: Namespace) -> None:
         config = yaml.safe_load(conf_file)
     config = {} if config is None else config
 
+    smote_fn = get_smote_fn(**config) if args.smote else None
     model = choose_model(args.model, **config)
 
     if args.mode == "eval":
@@ -119,7 +131,7 @@ def __main(args: Namespace) -> None:
                 Y_train,
                 k=args.cross_val,
                 scoring="balanced_accuracy",
-                smote=args.smote,
+                smote_fn=smote_fn,
             )
 
         print(f"Average balanced accuracy is: {score:.4f}")
@@ -136,7 +148,9 @@ def __main(args: Namespace) -> None:
         if args.balanced_ensemble:
             finalize_model_balanced_ensemble(model, X_train, Y_train, X_test, test_ids, args.output)
         else:
-            finalize_model(model, X_train, Y_train, X_test, test_ids, args.output, smote=args.smote)
+            finalize_model(
+                model, X_train, Y_train, X_test, test_ids, args.output, smote_fn=smote_fn
+            )
 
         if args.visual:
             visualize_model(model, X_train, Y_train)
@@ -172,6 +186,25 @@ def __loss(
     hess *= weights
 
     return grad.reshape(-1), hess.reshape(-1)
+
+
+def get_smote_fn(
+    sampling_strategy: Union[Dict[int, float], str] = "auto",
+    k_neighbors: int = 5,
+    **kwargs,
+) -> SMOTE:
+    """Get a function that chooses the SMOTE model given the hyper-parameters."""
+
+    def smote_fn(Y):
+        counts = np.bincount(Y.astype(np.int64))
+        sampling_strategy_full = {
+            i: int(sampling_strategy[i] * (max(counts) - counts[i]) + counts[i]) for i in range(3)
+        }
+        return SMOTE(
+            sampling_strategy=sampling_strategy_full, k_neighbors=k_neighbors, random_state=0
+        )
+
+    return smote_fn
 
 
 def choose_model(
