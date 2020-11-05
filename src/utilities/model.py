@@ -1,13 +1,13 @@
 """Utility functions for model-related tasks."""
 import os
 from datetime import datetime
-from typing import Any, Callable, List, Union
+from typing import Any, Callable, List, Optional, Union
 from warnings import warn
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from imblearn.combine import SMOTEENN
+from imblearn.over_sampling.base import BaseOverSampler
 from sklearn.base import BaseEstimator
 from sklearn.feature_selection import RFECV
 from sklearn.metrics import (
@@ -20,7 +20,7 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
     roc_curve,
 )
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.random import sample_without_replacement
 from tensorboardX import SummaryWriter
 
@@ -103,7 +103,7 @@ def evaluate_model(
     Y_train: CSVData,
     k: int,
     scoring: Union[str, Callable[[BaseEstimator, CSVData, CSVData], float]],
-    smote: bool,
+    smote_fn: Optional[Callable[[CSVData], BaseOverSampler]] = None,
 ) -> float:
     """Perform cross-validation on the given dataset and return the R^2 score.
 
@@ -114,6 +114,7 @@ def evaluate_model(
     Y_train: The training labels
     k: The number of folds in k-fold cross-validation
     scoring: The scoring metric to use
+    smote_fn: The function that takes labels and returns SMOTE
 
     Returns
     -------
@@ -121,23 +122,20 @@ def evaluate_model(
     """
     score = 0
     kf = StratifiedKFold(n_splits=k, shuffle=True)
+
     for train_index, test_index in kf.split(X_train, Y_train):
         X_train_cv, X_test_cv = X_train[train_index], X_train[test_index]
         Y_train_cv, Y_test_cv = Y_train[train_index], Y_train[test_index]
 
-        if smote:
-            sm = SMOTEENN(random_state=17)
-            X_train_cv, Y_train_cv = sm.fit_resample(X_train_cv, Y_train_cv)
+        if smote_fn:
+            smote = smote_fn(Y_train_cv)
+            X_train_cv, Y_train_cv = smote.fit_resample(X_train_cv, Y_train_cv)
 
         model.fit(X_train_cv, Y_train_cv)
         pred = model.predict(X_test_cv)
         score += balanced_accuracy_score(Y_test_cv, pred)
 
     return score / k
-
-    scores = cross_val_score(model, X_train, Y_train, cv=k, scoring=scoring)
-    avg_score = np.mean(scores)
-    return avg_score
 
 
 def finalize_model(
@@ -147,7 +145,7 @@ def finalize_model(
     X_test: CSVData,
     test_ids: CSVData,
     output: str,
-    smote: bool,
+    smote_fn: Optional[Callable[[CSVData], BaseOverSampler]] = None,
 ) -> None:
     """Train the model on the complete data and generate the submission file.
 
@@ -159,12 +157,13 @@ def finalize_model(
     X_test: The test data
     test_ids: The IDs for the test data
     output: The path where to dump the output
+    smote_fn: The function that takes labels and returns SMOTE
     """
     print("Training model...")
 
-    if smote:
-        sm = SMOTEENN(random_state=17)
-        X_train, Y_train = sm.fit_resample(X_train, Y_train)
+    if smote_fn:
+        smote = smote_fn(Y_train)
+        X_train, Y_train = smote.fit_resample(X_train, Y_train)
 
     model.fit(X_train, Y_train)
 
