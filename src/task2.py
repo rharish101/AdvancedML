@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import yaml
 from hyperopt import fmin, hp, tpe
-from imblearn.over_sampling import SMOTE
+from imblearn.over_sampling import ADASYN
 from sklearn.ensemble import VotingClassifier
 from sklearn.svm import SVC
 from typing_extensions import Final
@@ -190,7 +190,7 @@ def get_smote_fn(
     sampling_2: Optional[float] = None,
     k_neighbors: int = 5,
     **kwargs,
-) -> SMOTE:
+) -> ADASYN:
     """Get a function that chooses the SMOTE model given the hyper-parameters."""
     # Hardcoding class 1 to be majority
     if sampling_0 is None or sampling_2 is None:
@@ -207,8 +207,8 @@ def get_smote_fn(
                 i: int(sampling_strategy[i] * (max(counts) - counts[i]) + counts[i])
                 for i in range(3)
             }
-        return SMOTE(
-            sampling_strategy=sampling_strategy_full, k_neighbors=k_neighbors, random_state=0
+        return ADASYN(
+            sampling_strategy=sampling_strategy_full, n_neighbors=k_neighbors, random_state=0
         )
 
     return smote_fn
