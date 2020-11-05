@@ -10,9 +10,15 @@ import pandas as pd
 from imblearn.combine import SMOTEENN
 from sklearn.base import BaseEstimator
 from sklearn.feature_selection import RFECV
-from sklearn.metrics import (  # plot_precision_recall_curve,; plot_roc_curve,
+from sklearn.metrics import (
+    PrecisionRecallDisplay,
+    RocCurveDisplay,
+    auc,
     balanced_accuracy_score,
     plot_confusion_matrix,
+    precision_recall_curve,
+    precision_recall_fscore_support,
+    roc_curve,
 )
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.utils.random import sample_without_replacement
@@ -311,7 +317,40 @@ def visualize_model(model, X_test, Y_test):
 
     Y_test: Data labels for the evaluation data
     """
-    plot_confusion_matrix(model, X_test, Y_test)
-    # plot_precision_recall_curve(model, X_train, Y_train)
-    # plot_roc_curve(model, X_train, Y_train)
+    Y_probabilities = model.decision_function(X_test)
+    _, axes = plt.subplots(ncols=3, figsize=(16, 5))
+
+    # Plot confusion matrix
+    plot_confusion_matrix(model, X_test, Y_test, ax=axes[0])
+
+    # Plot precision-recall and ROC curve for each class
+    for index, class_label in enumerate(model.classes_):
+        # Plot precision-recall curve
+        precision, recall, _ = precision_recall_curve(
+            Y_test, Y_probabilities[:, index], pos_label=class_label
+        )
+
+        name = f"class {int(class_label)}"
+        viz = PrecisionRecallDisplay(precision=precision, recall=recall, estimator_name=name)
+        viz.plot(ax=axes[1], name=name)
+
+        # Plot ROC curve
+        fpr, tpr, _ = roc_curve(Y_test, Y_probabilities[:, index], pos_label=class_label)
+        roc_auc = auc(fpr, tpr)
+
+        viz = RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=roc_auc, estimator_name=name)
+        viz.plot(ax=axes[2], name=name)
+
+    precisions, recalls, fscores, supports = precision_recall_fscore_support(
+        Y_test, model.predict(X_test)
+    )
+
+    for index, (precision, recall, fscore, support) in enumerate(
+        zip(precisions, recalls, fscores, supports)
+    ):
+        print(
+            f"class {index} - precision: {precision:0.4f}, recall: {recall:0.4f}",
+            f"fscore: {fscore:0.4f}, support: {support}",
+        )
+
     plt.show()
