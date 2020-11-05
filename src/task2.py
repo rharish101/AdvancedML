@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """The entry point for the scripts for Task 2."""
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
-from typing import Dict, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import yaml
@@ -50,11 +50,8 @@ ENSEMBLE_SPACE: Final = {
 }
 MODEL_SPACE: Final = {"xgb": XGB_SPACE, "svm": SVM_SPACE, "ensemble": ENSEMBLE_SPACE}
 SMOTE_SPACE: Final = {
-    "sampling_strategy": {
-        0: hp.uniform("sampling_0", 0, 1),
-        1: 1.0,  # hardcoding class 1 to be majority
-        2: hp.uniform("sampling_2", 0, 1),
-    },
+    "sampling_0": hp.uniform("sampling_0", 0, 1),
+    "sampling_2": hp.uniform("sampling_2", 0, 1),
     "k_neighbors": hp.choice("k_neighbors", range(1, 10)),
 }
 SPACE: Final = {
@@ -189,17 +186,27 @@ def __loss(
 
 
 def get_smote_fn(
-    sampling_strategy: Union[Dict[int, float], str] = "auto",
+    sampling_0: Optional[float] = None,
+    sampling_2: Optional[float] = None,
     k_neighbors: int = 5,
     **kwargs,
 ) -> SMOTE:
     """Get a function that chooses the SMOTE model given the hyper-parameters."""
+    # Hardcoding class 1 to be majority
+    if sampling_0 is None or sampling_2 is None:
+        sampling_strategy: Optional[List[float]] = None
+    else:
+        sampling_strategy = [sampling_0, 1.0, sampling_2]
 
     def smote_fn(Y):
         counts = np.bincount(Y.astype(np.int64))
-        sampling_strategy_full = {
-            i: int(sampling_strategy[i] * (max(counts) - counts[i]) + counts[i]) for i in range(3)
-        }
+        if sampling_strategy is None:
+            sampling_strategy_full = "auto"
+        else:
+            sampling_strategy_full = {
+                i: int(sampling_strategy[i] * (max(counts) - counts[i]) + counts[i])
+                for i in range(3)
+            }
         return SMOTE(
             sampling_strategy=sampling_strategy_full, k_neighbors=k_neighbors, random_state=0
         )
