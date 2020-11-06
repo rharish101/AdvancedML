@@ -37,6 +37,7 @@ XGB_SPACE: Final = {
     "subsample": hp.uniform("subsample", 0.8, 1),
     "colsample_bytree": hp.quniform("colsample_bytree", 0.5, 1.0, 0.05),
     "reg_lambda": hp.lognormal("reg_lambda", 1.0, 1.0),
+    "focus": hp.lognormal("focus", 1.0, 1.0),
 }
 SVM_SPACE: Final = {
     "C": hp.lognormal("C", 1.0, 1.0),
@@ -55,7 +56,6 @@ SMOTE_SPACE: Final = {
     "k_neighbors": hp.choice("k_neighbors", range(1, 10)),
 }
 SPACE: Final = {
-    "focus": hp.lognormal("focus", 1.0, 1.0),
     "alpha_1": hp.lognormal("alpha_1", 1.0, 1.0),
     "alpha_2": hp.lognormal("alpha_2", 1.0, 1.0),
 }
