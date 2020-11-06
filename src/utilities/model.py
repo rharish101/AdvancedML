@@ -320,7 +320,7 @@ def visualize_model(model, X_test, Y_test):
     _, axes = plt.subplots(ncols=3, figsize=(16, 5))
 
     # Plot confusion matrix
-    plot_confusion_matrix(model, X_test, Y_test, ax=axes[0])
+    plot_confusion_matrix(model, X_test, Y_test, ax=axes[0], normalize="true")
 
     # Plot precision-recall and ROC curve for each class
     for index, class_label in enumerate(model.classes_):
