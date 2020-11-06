@@ -38,12 +38,10 @@ XGB_SPACE: Final = {
     "colsample_bytree": hp.quniform("colsample_bytree", 0.5, 1.0, 0.05),
     "reg_lambda": hp.lognormal("reg_lambda", 1.0, 1.0),
     "focus": hp.lognormal("focus", 1.0, 1.0),
+    "alpha_1": hp.lognormal("alpha_1", 1.0, 1.0),
+    "alpha_2": hp.lognormal("alpha_2", 1.0, 1.0),
 }
-SVM_SPACE: Final = {
-    "C": hp.lognormal("C", 1.0, 1.0),
-    "kernel": hp.choice("kernel", ["poly", "rbf", "sigmoid"]),
-    "gamma_svm": hp.uniform("gamma_svm", 1e-4, 1.0),
-}
+SVM_SPACE: Final = {"C": hp.lognormal("C", 1.0, 1.0)}
 ENSEMBLE_SPACE: Final = {
     "svm_wt": hp.lognormal("svm_wt", 1.0, 1.0),
     **XGB_SPACE,
@@ -54,10 +52,6 @@ SMOTE_SPACE: Final = {
     "sampling_0": hp.uniform("sampling_0", 0, 1),
     "sampling_2": hp.uniform("sampling_2", 0, 1),
     "k_neighbors": hp.choice("k_neighbors", range(1, 10)),
-}
-SPACE: Final = {
-    "alpha_1": hp.lognormal("alpha_1", 1.0, 1.0),
-    "alpha_2": hp.lognormal("alpha_2", 1.0, 1.0),
 }
 
 
@@ -79,7 +73,7 @@ def __main(args: Namespace) -> None:
     if args.mode == "tune":
         print("Starting hyper-parameter tuning")
         smote_space = SMOTE_SPACE if args.smote else {}
-        space = {**SPACE, **MODEL_SPACE[args.model], **smote_space}
+        space = {**MODEL_SPACE[args.model], **smote_space}
         best = fmin(
             lambda config: objective(
                 X_train, Y_train, args.model, args.smote, args.balanced_ensemble, config
@@ -247,8 +241,6 @@ def choose_model(
     alpha_1: float = 1.0,
     alpha_2: float = 1.0,
     C: float = 1.0,
-    kernel: str = "rbf",
-    gamma_svm: float = 1e-3,
     svm_wt: float = 1.0,
     **kwargs,
 ) -> BaseClassifier:
@@ -268,12 +260,7 @@ def choose_model(
         reg_lambda=reg_lambda,
     )
 
-    svm_model = SVC(
-        C=C,
-        kernel=kernel,
-        gamma=gamma_svm,
-        class_weight={i: val for i, val in enumerate(weights)},
-    )
+    svm_model = SVC(C=C, class_weight="balanced")
 
     if name == "xgb":
         return xgb_model
