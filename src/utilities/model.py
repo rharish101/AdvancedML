@@ -57,7 +57,7 @@ def evaluate_model_balanced_ensemble(
     nr_of_classes = len(np.unique(Y_train))
     majority_class = max(set(Y_train), key=list(Y_train).count)
 
-    kf = StratifiedKFold(n_splits=k, shuffle=True)
+    kf = StratifiedKFold(n_splits=k, shuffle=True, random_state=0)
     for train_index, test_index in kf.split(X_train, Y_train):
         X_train_cv, X_test_cv = X_train[train_index], X_train[test_index]
         Y_train_cv, Y_test_cv = Y_train[train_index], Y_train[test_index]
@@ -121,7 +121,7 @@ def evaluate_model(
     The validation score
     """
     score = 0
-    kf = StratifiedKFold(n_splits=k, shuffle=True)
+    kf = StratifiedKFold(n_splits=k, shuffle=True, random_state=0)
 
     for train_index, test_index in kf.split(X_train, Y_train):
         X_train_cv, X_test_cv = X_train[train_index], X_train[test_index]

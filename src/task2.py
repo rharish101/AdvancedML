@@ -81,6 +81,7 @@ def __main(args: Namespace) -> None:
             space,
             algo=tpe.suggest,
             max_evals=args.max_evals,
+            rstate=np.random.RandomState(0),
         )
 
         # Convert numpy dtypes to native Python
@@ -258,9 +259,10 @@ def choose_model(
         subsample=subsample,
         colsample_bytree=colsample_bytree,
         reg_lambda=reg_lambda,
+        random_state=0,
     )
 
-    svm_model = SVC(C=C, class_weight="balanced")
+    svm_model = SVC(C=C, class_weight="balanced", random_state=0)
 
     if name == "xgb":
         return xgb_model
