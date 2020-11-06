@@ -1,18 +1,18 @@
 #!/usr/bin/env python
 """The entry point for the scripts for Task 2."""
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import yaml
-from hyperopt import fmin, hp, tpe
+from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
 from imblearn.over_sampling import ADASYN
 from sklearn.ensemble import VotingClassifier
 from sklearn.svm import SVC
 from typing_extensions import Final
 from xgboost import XGBClassifier
 
-from typings import BaseClassifier
+from typings import BaseClassifier, CSVData
 from utilities.data import read_csv, run_data_diagnostics
 from utilities.model import (
     evaluate_model,
@@ -77,27 +77,17 @@ def __main(args: Namespace) -> None:
     Y_train = Y_train[:, 1]
 
     if args.mode == "tune":
-
-        def objective(config: Dict[str, Union[float, int]]) -> float:
-            smote_fn = get_smote_fn(**config) if args.smote else None  # type:ignore
-            model = choose_model(args.model, **config)  # type:ignore
-            # Keep k low for faster evaluation
-            if args.balanced_ensemble:
-                score = evaluate_model_balanced_ensemble(
-                    model, X_train, Y_train, k=5, scoring="balanced_accuracy"
-                )
-            else:
-                score = evaluate_model(
-                    model, X_train, Y_train, k=5, scoring="balanced_accuracy", smote_fn=smote_fn
-                )
-
-            # We need to maximize score, so minimize the negative
-            return -score
-
         print("Starting hyper-parameter tuning")
         smote_space = SMOTE_SPACE if args.smote else {}
         space = {**SPACE, **MODEL_SPACE[args.model], **smote_space}
-        best = fmin(objective, space, algo=tpe.suggest, max_evals=args.max_evals)
+        best = fmin(
+            lambda config: objective(
+                X_train, Y_train, args.model, args.smote, args.balanced_ensemble, config
+            ),
+            space,
+            algo=tpe.suggest,
+            max_evals=args.max_evals,
+        )
 
         # Convert numpy dtypes to native Python
         for key, value in best.items():
@@ -183,6 +173,35 @@ def __loss(
     hess *= weights
 
     return grad.reshape(-1), hess.reshape(-1)
+
+
+def objective(
+    X_train: CSVData,
+    Y_train: CSVData,
+    model: str,
+    smote: bool,
+    balanced_ensemble: bool,
+    config: Dict[str, Union[float, int]],
+) -> Dict[str, Any]:
+    """Get the objective function for Hyperopt."""
+    try:
+        smote_fn = get_smote_fn(**config) if smote else None  # type:ignore
+        model = choose_model(model, **config)  # type:ignore
+        # Keep k low for faster evaluation
+        if balanced_ensemble:
+            score = evaluate_model_balanced_ensemble(
+                model, X_train, Y_train, k=5, scoring="balanced_accuracy"
+            )
+        else:
+            score = evaluate_model(
+                model, X_train, Y_train, k=5, scoring="balanced_accuracy", smote_fn=smote_fn
+            )
+
+        # We need to maximize score, so minimize the negative
+        return {"loss": -score, "status": STATUS_OK}
+
+    except Exception:
+        return {"loss": 0, "status": STATUS_FAIL}
 
 
 def get_smote_fn(
