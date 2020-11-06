@@ -305,7 +305,6 @@ if __name__ == "__main__":
         help="the path to the YAML config for the hyper-parameters",
     )
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
-    parser.add_argument("--visual", action="store_true", help="enable model visualizations")
 
     # Sub-parser for k-fold cross-validation
     eval_parser = subparsers.add_parser(
@@ -333,6 +332,7 @@ if __name__ == "__main__":
         default="dist/submission2.csv",
         help="the path by which to save the output CSV",
     )
+    parser.add_argument("--visual", action="store_true", help="enable model visualizations")
 
     # Sub-parser for hyper-param tuning
     tune_parser = subparsers.add_parser(
