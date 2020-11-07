@@ -21,6 +21,7 @@ from sklearn.metrics import (
     roc_curve,
 )
 from sklearn.model_selection import StratifiedKFold
+from sklearn.neighbors import LocalOutlierFactor
 from sklearn.utils.random import sample_without_replacement
 from tensorboardX import SummaryWriter
 
@@ -104,6 +105,7 @@ def evaluate_model(
     k: int,
     scoring: Union[str, Callable[[BaseEstimator, CSVData, CSVData], float]],
     smote_fn: Optional[Callable[[CSVData], BaseOverSampler]] = None,
+    outlier_detection: LocalOutlierFactor = None,
 ) -> float:
     """Perform cross-validation on the given dataset and return the R^2 score.
 
@@ -126,6 +128,11 @@ def evaluate_model(
     for train_index, test_index in kf.split(X_train, Y_train):
         X_train_cv, X_test_cv = X_train[train_index], X_train[test_index]
         Y_train_cv, Y_test_cv = Y_train[train_index], Y_train[test_index]
+
+        if outlier_detection:
+            outliers = outlier_detection.fit_predict(X_train_cv)
+            X_train_cv = X_train_cv[outliers == 1]
+            Y_train_cv = Y_train_cv[outliers == 1]
 
         if smote_fn:
             smote = smote_fn(Y_train_cv)

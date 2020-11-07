@@ -8,6 +8,7 @@ import yaml
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
 from imblearn.over_sampling import ADASYN
 from sklearn.ensemble import VotingClassifier
+from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import SVC
 from typing_extensions import Final
 from xgboost import XGBClassifier
@@ -53,6 +54,10 @@ SMOTE_SPACE: Final = {
     "sampling_2": hp.uniform("sampling_2", 0, 1),
     "k_neighbors": hp.choice("k_neighbors", range(1, 10)),
 }
+OUTLIER_SPACE: Final = {
+    "n_neighbors": hp.choice("n_neighbors", range(1, 30)),
+    "contamination": hp.quniform("contamination", 0.05, 0.5, 0.05),
+}
 
 
 def __main(args: Namespace) -> None:
@@ -73,10 +78,17 @@ def __main(args: Namespace) -> None:
     if args.mode == "tune":
         print("Starting hyper-parameter tuning")
         smote_space = SMOTE_SPACE if args.smote else {}
-        space = {**MODEL_SPACE[args.model], **smote_space}
+        outlier_space = OUTLIER_SPACE if args.outlier else {}
+        space = {**MODEL_SPACE[args.model], **smote_space, **outlier_space}
         best = fmin(
             lambda config: objective(
-                X_train, Y_train, args.model, args.smote, args.balanced_ensemble, config
+                X_train,
+                Y_train,
+                args.model,
+                args.smote,
+                args.outlier,
+                args.balanced_ensemble,
+                config,
             ),
             space,
             algo=tpe.suggest,
@@ -98,8 +110,14 @@ def __main(args: Namespace) -> None:
         config = yaml.safe_load(conf_file)
     config = {} if config is None else config
 
+    print(config)
+
     smote_fn = get_smote_fn(**config) if args.smote else None
     model = choose_model(args.model, **config)
+    if args.outlier:
+        outliers = get_outlier_detection(**config).fit_predict(X_train)
+        X_train = X_train[outliers == 1]
+        Y_train = Y_train[outliers == 1]
 
     if args.mode == "eval":
         if args.balanced_ensemble:
@@ -175,6 +193,7 @@ def objective(
     Y_train: CSVData,
     model: str,
     smote: bool,
+    outlier: bool,
     balanced_ensemble: bool,
     config: Dict[str, Union[float, int]],
 ) -> Dict[str, Any]:
@@ -182,6 +201,8 @@ def objective(
     try:
         smote_fn = get_smote_fn(**config) if smote else None  # type:ignore
         model = choose_model(model, **config)  # type:ignore
+        outlier_detection = get_outlier_detection(**config) if outlier else None  # type:ignore
+
         # Keep k low for faster evaluation
         if balanced_ensemble:
             score = evaluate_model_balanced_ensemble(
@@ -189,7 +210,13 @@ def objective(
             )
         else:
             score = evaluate_model(
-                model, X_train, Y_train, k=5, scoring="balanced_accuracy", smote_fn=smote_fn
+                model,
+                X_train,
+                Y_train,
+                k=5,
+                scoring="balanced_accuracy",
+                smote_fn=smote_fn,
+                outlier_detection=outlier_detection,
             )
 
         # We need to maximize score, so minimize the negative
@@ -197,6 +224,15 @@ def objective(
 
     except Exception:
         return {"loss": 0, "status": STATUS_FAIL}
+
+
+def get_outlier_detection(
+    n_neighbors: int,
+    contamination: float,
+    **kwargs,
+) -> LocalOutlierFactor:
+    """Get outlier detection model given the hyper-parameters."""
+    return LocalOutlierFactor(contamination=contamination, n_neighbors=n_neighbors)
 
 
 def get_smote_fn(
@@ -289,6 +325,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
     parser.add_argument("--smote", action="store_true", help="use SMOTE")
+    parser.add_argument("--outlier", action="store_true", help="use outlier detection")
     parser.add_argument(
         "--balanced-ensemble", action="store_true", help="use ensembling to obtain balanced sets"
     )
