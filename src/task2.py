@@ -80,6 +80,21 @@ def __main(args: Namespace) -> None:
         smote_space = SMOTE_SPACE if args.smote else {}
         outlier_space = OUTLIER_SPACE if args.outlier else {}
         space = {**MODEL_SPACE[args.model], **smote_space, **outlier_space}
+
+        saved_config = {}
+
+        # We take best params found so far for the SVM and XGBoost, if present
+        if args.model == "ensemble":
+            with open(args.config, "r") as conf_file:
+                saved_config = yaml.safe_load(conf_file)
+            saved_config = {} if saved_config is None else saved_config
+
+            space = {
+                k: v
+                for k, v in space.items()
+                if not any(str(k2) in str(k) for k2, _ in saved_config.items())
+            }
+
         best = fmin(
             lambda config: objective(
                 X_train,
@@ -88,7 +103,7 @@ def __main(args: Namespace) -> None:
                 args.smote,
                 args.outlier,
                 args.balanced_ensemble,
-                config,
+                {**config, **saved_config},
             ),
             space,
             algo=tpe.suggest,
