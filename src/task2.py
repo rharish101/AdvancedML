@@ -110,8 +110,6 @@ def __main(args: Namespace) -> None:
         config = yaml.safe_load(conf_file)
     config = {} if config is None else config
 
-    print(config)
-
     smote_fn = get_smote_fn(**config) if args.smote else None
     model = choose_model(args.model, **config)
     if args.outlier:
