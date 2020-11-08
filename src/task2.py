@@ -83,8 +83,7 @@ def __main(args: Namespace) -> None:
 
         saved_config = {}
 
-        # We take best params found so far for the SVM and XGBoost, if present
-        if args.model == "ensemble":
+        if args.extend:
             with open(args.config, "r") as conf_file:
                 saved_config = yaml.safe_load(conf_file)
             saved_config = {} if saved_config is None else saved_config
@@ -393,6 +392,9 @@ if __name__ == "__main__":
         type=int,
         default=100,
         help="max. evaluations for hyper-opt",
+    )
+    tune_parser.add_argument(
+        "--extend", action="store_true", help="only tune parameters not present in config file"
     )
 
     __main(parser.parse_args())
