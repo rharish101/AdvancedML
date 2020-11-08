@@ -83,7 +83,7 @@ def __main(args: Namespace) -> None:
     if args.mode == "tune":
         print("Starting hyper-parameter tuning")
         smote_space = SMOTE_SPACE if args.smote else {}
-        outlier_space = OUTLIER_SPACE[args.outlier] if args.outlier else {}
+        outlier_space = OUTLIER_SPACE[args.outlier] if args.outlier is not None else {}
         space = {**MODEL_SPACE[args.model], **smote_space, **outlier_space}
 
         saved_config = {}
@@ -256,7 +256,6 @@ def get_outlier_detection(
     if n_neighbors is not None:
         return LocalOutlierFactor(contamination=contamination, n_neighbors=n_neighbors)
     elif n_estimators is not None:
-        print("Returning " + str(contamination) + " and " + str(n_estimators))
         return IsolationForest(contamination=contamination, n_estimators=n_estimators)
 
     return None

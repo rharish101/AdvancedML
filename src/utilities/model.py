@@ -121,7 +121,6 @@ def evaluate_model(
     -------
     The validation score
     """
-    # print(outlier_detection)
     score = 0
     kf = StratifiedKFold(n_splits=k, shuffle=True, random_state=0)
 
