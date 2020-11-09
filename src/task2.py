@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """The entry point for the scripts for Task 2."""
+import os
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -120,12 +121,7 @@ def __main(args: Namespace) -> None:
         except KeyboardInterrupt:
             best = trials.argmin
 
-        # Convert numpy dtypes to native Python
-        for key, value in best.items():
-            best[key] = value.item()
-
-        with open(args.config, "w") as conf_file:
-            yaml.dump(best, conf_file)
+        __save_params(best, args.config)
         print(f"Best parameters saved in {args.config}")
         return
 
@@ -256,6 +252,19 @@ def objective(
 
     except Exception:
         return {"loss": 0, "status": STATUS_FAIL}
+
+
+def __save_params(params: Dict[str, np.ndarray], path: str) -> None:
+    # Convert numpy dtypes to native Python
+    for key, value in params.items():
+        params[key] = value.item()
+
+    path_dir = os.path.dirname(path)
+    if not os.path.exists(path_dir):
+        os.makedirs(path_dir)
+
+    with open(path, "w") as conf_file:
+        yaml.dump(params, conf_file)
 
 
 def get_outlier_detection(
