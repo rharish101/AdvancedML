@@ -152,6 +152,7 @@ def finalize_model(
     test_ids: CSVData,
     output: str,
     smote_fn: Optional[Callable[[CSVData], BaseOverSampler]] = None,
+    outlier_detection: Any = None,
 ) -> None:
     """Train the model on the complete data and generate the submission file.
 
@@ -166,6 +167,11 @@ def finalize_model(
     smote_fn: The function that takes labels and returns SMOTE
     """
     print("Training model...")
+
+    if outlier_detection is not None:
+        outliers = outlier_detection.fit_predict(X_train)
+        X_train = X_train[outliers == 1]
+        Y_train = Y_train[outliers == 1]
 
     if smote_fn:
         smote = smote_fn(Y_train)

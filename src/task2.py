@@ -131,10 +131,9 @@ def __main(args: Namespace) -> None:
 
     smote_fn = get_smote_fn(**config) if args.smote else None
     model = choose_model(args.model, **config)
-    if args.outlier is not None:
-        outliers = get_outlier_detection(**config).fit_predict(X_train)
-        X_train = X_train[outliers == 1]
-        Y_train = Y_train[outliers == 1]
+    outlier_detection = (
+        get_outlier_detection(**config) if args.outlier is not None else None  # type:ignore
+    )
 
     if args.mode == "eval":
         if args.balanced_ensemble:
@@ -149,6 +148,7 @@ def __main(args: Namespace) -> None:
                 k=args.cross_val,
                 scoring="balanced_accuracy",
                 smote_fn=smote_fn,
+                outlier_detection=outlier_detection,
             )
 
         print(f"Average balanced accuracy is: {score:.4f}")
@@ -166,7 +166,14 @@ def __main(args: Namespace) -> None:
             finalize_model_balanced_ensemble(model, X_train, Y_train, X_test, test_ids, args.output)
         else:
             finalize_model(
-                model, X_train, Y_train, X_test, test_ids, args.output, smote_fn=smote_fn
+                model,
+                X_train,
+                Y_train,
+                X_test,
+                test_ids,
+                args.output,
+                smote_fn=smote_fn,
+                outlier_detection=outlier_detection,
             )
 
         if args.visual:
