@@ -261,9 +261,13 @@ def get_outlier_detection(
 ) -> Any:
     """Get outlier detection model given the hyper-parameters."""
     if n_neighbors is not None:
-        return LocalOutlierFactor(contamination=contamination, n_neighbors=n_neighbors)
+        return LocalOutlierFactor(
+            contamination=contamination, n_neighbors=n_neighbors, random_state=0
+        )
     elif n_estimators is not None:
-        return IsolationForest(contamination=contamination, n_estimators=n_estimators)
+        return IsolationForest(
+            contamination=contamination, n_estimators=n_estimators, random_state=0
+        )
 
     return None
 
