@@ -1,7 +1,7 @@
 """Utility functions for model-related tasks."""
 import os
 from datetime import datetime
-from typing import Any, Callable, List, Optional, Union
+from typing import Any, Callable, List, Optional
 from warnings import warn
 
 import matplotlib.pyplot as plt
@@ -15,6 +15,7 @@ from sklearn.metrics import (
     RocCurveDisplay,
     auc,
     balanced_accuracy_score,
+    f1_score,
     plot_confusion_matrix,
     precision_recall_curve,
     precision_recall_fscore_support,
@@ -37,7 +38,6 @@ def evaluate_model_balanced_ensemble(
     X_train: CSVData,
     Y_train: CSVData,
     k: int,
-    scoring: Union[str, Callable[[BaseEstimator, CSVData, CSVData], float]],
 ) -> float:
     """Perform cross-validation on the given dataset using ensembling to counteract class imbalance.
 
@@ -47,7 +47,6 @@ def evaluate_model_balanced_ensemble(
     X_train: The training data
     Y_train: The training labels
     k: The number of folds in k-fold cross-validation
-    scoring: The scoring metric to use
 
     Returns
     -------
@@ -102,7 +101,6 @@ def evaluate_model(
     X_train: CSVData,
     Y_train: CSVData,
     k: int,
-    scoring: Union[str, Callable[[BaseEstimator, CSVData, CSVData], float]],
     smote_fn: Optional[Callable[[CSVData], BaseOverSampler]] = None,
     outlier_detection: Any = None,
 ) -> float:
@@ -114,7 +112,6 @@ def evaluate_model(
     X_train: The training data
     Y_train: The training labels
     k: The number of folds in k-fold cross-validation
-    scoring: The scoring metric to use
     smote_fn: The function that takes labels and returns SMOTE
 
     Returns
@@ -139,7 +136,7 @@ def evaluate_model(
 
         model.fit(X_train_cv, Y_train_cv)
         pred = model.predict(X_test_cv)
-        score += balanced_accuracy_score(Y_test_cv, pred)
+        score += f1_score(Y_test_cv, pred, average="micro")
 
     return score / k
 
