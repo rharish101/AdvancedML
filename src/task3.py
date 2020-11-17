@@ -152,6 +152,8 @@ def __main(args: Namespace) -> None:
         test_ids = X_test[:, 0]
         X_test = X_test[:, 1:]
 
+        X_test = get_ecg_features(X_test)
+
         finalize_model(
             model,
             X_train,
@@ -179,7 +181,7 @@ def get_ecg_features(X_train: CSVData) -> np.ndarray:
         rpeaks = ssf_segmenter(x)[0]
         beats = extract_heartbeats(x, rpeaks)[0]
         X_train_features.append(np.mean(beats, axis=0).tolist())
-        print(len(X_train_features))
+
     return np.array(X_train_features)
 
 
@@ -399,7 +401,7 @@ if __name__ == "__main__":
     final_parser.add_argument(
         "--output",
         type=str,
-        default="dist/submission2.csv",
+        default="dist/submission3.csv",
         help="the path by which to save the output CSV",
     )
     parser.add_argument("--visual", action="store_true", help="enable model visualizations")
