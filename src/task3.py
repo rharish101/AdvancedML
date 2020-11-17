@@ -180,7 +180,7 @@ def get_ecg_features(X_train: CSVData) -> np.ndarray:
         x = [v for v in x if not np.isnan(v)]
         rpeaks = ssf_segmenter(x)[0]
         beats = extract_heartbeats(x, rpeaks)[0]
-        X_train_features.append(np.mean(beats, axis=0).tolist())
+        X_train_features.append(np.append(np.mean(beats, axis=0), np.std(beats, axis=0)).tolist())
 
     return np.array(X_train_features)
 
@@ -328,6 +328,8 @@ def choose_model(
         random_state=0,
     )
 
+    xgb_model = XGBClassifier(random_state=0)
+
     svm_model = SVC(C=C, class_weight="balanced", random_state=0)
 
     random_forest_classifier = RandomForestClassifier()
@@ -367,7 +369,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         choices=["xgb", "svm", "ensemble", "forest"],
-        default="forest",
+        default="xgb",
         help="the choice of model to train",
     )
     parser.add_argument(
