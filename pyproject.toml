@@ -26,6 +26,7 @@ PyYAML = "^5.3.1"
 hyperopt = "^0.2.5"
 matplotlib = "^3.3.2"
 imblearn = "^0.0"
+biosppy = "^0.6.1"
 
 [tool.poetry.dev-dependencies]
 black = "^20.8b1"

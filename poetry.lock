@@ -31,6 +31,39 @@ six = ">=1.12,<2.0"
 wrapt = ">=1.11,<2.0"
 
 [[package]]
+category = "main"
+description = "The bidirectional mapping library for Python."
+name = "bidict"
+optional = false
+python-versions = ">=3.6"
+version = "0.21.2"
+
+[package.extras]
+coverage = ["coverage (<6)", "pytest-cov (<3)"]
+dev = ["setuptools-scm", "hypothesis (<6)", "py (<2)", "pytest (<7)", "pytest-benchmark (>=3.2.0,<4)", "sortedcollections (<2)", "sortedcontainers (<3)", "Sphinx (<4)", "sphinx-autodoc-typehints (<2)", "coverage (<6)", "pytest-cov (<3)", "pre-commit (<3)", "tox (<4)"]
+docs = ["Sphinx (<4)", "sphinx-autodoc-typehints (<2)"]
+precommit = ["pre-commit (<3)"]
+test = ["hypothesis (<6)", "py (<2)", "pytest (<7)", "pytest-benchmark (>=3.2.0,<4)", "sortedcollections (<2)", "sortedcontainers (<3)", "Sphinx (<4)", "sphinx-autodoc-typehints (<2)"]
+
+[[package]]
+category = "main"
+description = "A toolbox for biosignal processing written in Python."
+name = "biosppy"
+optional = false
+python-versions = ">=2.7.10"
+version = "0.6.1"
+
+[package.dependencies]
+bidict = "*"
+h5py = "*"
+matplotlib = "*"
+numpy = "*"
+scikit-learn = "*"
+scipy = "*"
+shortuuid = "*"
+six = "*"
+
+[[package]]
 category = "dev"
 description = "The uncompromising code formatter."
 name = "black"
@@ -214,6 +247,19 @@ six = ">=1.5.2"
 
 [package.extras]
 protobuf = ["grpcio-tools (>=1.32.0)"]
+
+[[package]]
+category = "main"
+description = "Read and write HDF5 files from Python"
+name = "h5py"
+optional = false
+python-versions = ">=3.6"
+version = "3.1.0"
+
+[package.dependencies]
+[package.dependencies.numpy]
+python = ">=3.8,<3.9"
+version = ">=1.17.5"
 
 [[package]]
 category = "main"
@@ -701,6 +747,14 @@ numpy = ">=1.14.5"
 
 [[package]]
 category = "main"
+description = "A generator library for concise, unambiguous and URL-safe UUIDs."
+name = "shortuuid"
+optional = false
+python-versions = ">=3.5"
+version = "1.0.1"
+
+[[package]]
+category = "main"
 description = "Python 2 and 3 compatibility utilities"
 name = "six"
 optional = false
@@ -933,7 +987,7 @@ plotting = ["graphviz", "matplotlib"]
 scikit-learn = ["scikit-learn"]
 
 [metadata]
-content-hash = "1945b7319613e07bb6371bd3bad653bbc646142cc37142f2b13625a8baef3f03"
+content-hash = "71a21088e1007a1e1244b3b5fef6af7bf0344cee338d088bf004f065cf57e11f"
 lock-version = "1.0"
 python-versions = "~3.8.5"
 
@@ -949,6 +1003,14 @@ appdirs = [
 astroid = [
     {file = "astroid-2.4.2-py3-none-any.whl", hash = "sha256:bc58d83eb610252fd8de6363e39d4f1d0619c894b0ed24603b881c02e64c7386"},
     {file = "astroid-2.4.2.tar.gz", hash = "sha256:2f4078c2a41bf377eea06d71c9d2ba4eb8f6b1af2135bec27bbbb7d8f12bb703"},
+]
+bidict = [
+    {file = "bidict-0.21.2-py2.py3-none-any.whl", hash = "sha256:929d056e8d0d9b17ceda20ba5b24ac388e2a4d39802b87f9f4d3f45ecba070bf"},
+    {file = "bidict-0.21.2.tar.gz", hash = "sha256:4fa46f7ff96dc244abfc437383d987404ae861df797e2fd5b190e233c302be09"},
+]
+biosppy = [
+    {file = "biosppy-0.6.1-py2.py3-none-any.whl", hash = "sha256:3f5be9a323296cac8b470c0b4df78b454ec8aeb0a82a524cbc7f8920bef887a5"},
+    {file = "biosppy-0.6.1.tar.gz", hash = "sha256:39315a105eb8a1a46a9c641a683a2dbbd25cb0617786e96230ef82bae2e3fa7e"},
 ]
 black = [
     {file = "black-20.8b1.tar.gz", hash = "sha256:1c02557aa099101b9d21496f8a914e9ed2222ef70336404eeeac8edba836fbea"},
@@ -1051,6 +1113,21 @@ grpcio = [
     {file = "grpcio-1.32.0-cp38-cp38-win32.whl", hash = "sha256:5bddf9d53c8df70061916c3bfd2f468ccf26c348bb0fb6211531d895ed5e4c72"},
     {file = "grpcio-1.32.0-cp38-cp38-win_amd64.whl", hash = "sha256:14c0f017bfebbc18139551111ac58ecbde11f4bc375b73a53af38927d60308b6"},
     {file = "grpcio-1.32.0.tar.gz", hash = "sha256:01d3046fe980be25796d368f8fc5ff34b7cf5e1444f3789a017a7fe794465639"},
+]
+h5py = [
+    {file = "h5py-3.1.0-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:1cd367f89a5441236bdbb795e9fb9a9e3424929c00b4a54254ca760437f83d69"},
+    {file = "h5py-3.1.0-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:fea05349f63625a8fb808e57e42bb4c76930cf5d50ac58b678c52f913a48a89b"},
+    {file = "h5py-3.1.0-cp36-cp36m-win_amd64.whl", hash = "sha256:2e37352ddfcf9d77a2a47f7c8f7e125c6d20cc06c2995edeb7be222d4e152636"},
+    {file = "h5py-3.1.0-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:e33f61d3eb862614c0f273a1f993a64dc2f093e1a3094932c50ada9d2db2170f"},
+    {file = "h5py-3.1.0-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:236ac8d943be30b617ab615c3d4a4bf4a438add2be87e54af3687ab721a18fac"},
+    {file = "h5py-3.1.0-cp37-cp37m-win_amd64.whl", hash = "sha256:02c391fdb980762a1cc03a4bcaecd03dc463994a9a63a02264830114a96e111f"},
+    {file = "h5py-3.1.0-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:f89a3dae38843ffa49d17a31a3509a8129e9b46ece602a0138e1ed79e685c361"},
+    {file = "h5py-3.1.0-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:ba71f6229d2013fbb606476ecc29c6223fc16b244d35fcd8566ad9dbaf910857"},
+    {file = "h5py-3.1.0-cp38-cp38-win_amd64.whl", hash = "sha256:dccb89358bc84abcd711363c3e138f9f4eccfdf866f2139a8e72308328765b2c"},
+    {file = "h5py-3.1.0-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:cb74df83709d6d03d11e60b9480812f58da34f194beafa8c8314dbbeeedfe0a6"},
+    {file = "h5py-3.1.0-cp39-cp39-manylinux1_x86_64.whl", hash = "sha256:80c623be10479e81b64fa713b7ed4c0bbe9f02e8e7d2a2e5382336087b615ce4"},
+    {file = "h5py-3.1.0-cp39-cp39-win_amd64.whl", hash = "sha256:1cdfd1c5449ca1329d152f0b66830e93226ebce4f5e07dd8dc16bfc2b1a49d7b"},
+    {file = "h5py-3.1.0.tar.gz", hash = "sha256:1e2516f190652beedcb8c7acfa1c6fa92d99b42331cbef5e5c7ec2d65b0fc3c2"},
 ]
 hyperopt = [
     {file = "hyperopt-0.2.5-py2.py3-none-any.whl", hash = "sha256:dc5c7cceaf33c125b727cf92709e70035d94dd507831dae66406ac762a18a253"},
@@ -1463,6 +1540,10 @@ scipy = [
     {file = "scipy-1.5.3-cp38-cp38-win32.whl", hash = "sha256:33e6a7439f43f37d4c1135bc95bcd490ffeac6ef4b374892c7005ce2c729cf4a"},
     {file = "scipy-1.5.3-cp38-cp38-win_amd64.whl", hash = "sha256:a3db1fe7c6cb29ca02b14c9141151ebafd11e06ffb6da8ecd330eee5c8283a8a"},
     {file = "scipy-1.5.3.tar.gz", hash = "sha256:ddae76784574cc4c172f3d5edd7308be16078dd3b977e8746860c76c195fa707"},
+]
+shortuuid = [
+    {file = "shortuuid-1.0.1-py3-none-any.whl", hash = "sha256:492c7402ff91beb1342a5898bd61ea953985bf24a41cd9f247409aa2e03c8f77"},
+    {file = "shortuuid-1.0.1.tar.gz", hash = "sha256:3c11d2007b915c43bee3e10625f068d8a349e04f0d81f08f5fa08507427ebf1f"},
 ]
 six = [
     {file = "six-1.15.0-py2.py3-none-any.whl", hash = "sha256:8b74bedcbbbaca38ff6d7491d76f2b06b3592611af620f8426e82dddb04a5ced"},
