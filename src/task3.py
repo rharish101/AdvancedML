@@ -8,6 +8,7 @@ import yaml
 from biosppy.signals.ecg import ecg
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
 from imblearn.over_sampling import ADASYN
+from scipy.fft import fft
 from scipy.stats import median_abs_deviation
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
 from sklearn.neighbors import LocalOutlierFactor
@@ -181,10 +182,25 @@ def get_ecg_features(X_train: CSVData) -> np.ndarray:
 
     for x in X_train:
         x = np.array([v for v in x if not np.isnan(v)])
-        beats = ecg(x, sampling_rate=SAMPLING_RATE, show=False)["templates"]
-        median = np.median(beats, axis=0)
-        mad = median_abs_deviation(beats, axis=0)
-        X_train_features.append(np.append(median, mad).tolist())
+        extracted = ecg(x, sampling_rate=SAMPLING_RATE, show=False)
+        if len(extracted["rpeaks"]) <= 1:
+            continue
+
+        beats = extracted["templates"]
+        median_temp = fft(np.median(beats, axis=0))
+        mad_temp = fft(median_abs_deviation(beats, axis=0))
+
+        # We don't use the given heart rate as it applies physiological limits
+        # (40 <= heart rate <= 200), and thus this may be empty. We also don't care about smoothing
+        # it, as we're using median and MAD anyway.
+        heart_rate = SAMPLING_RATE * (60.0 / np.diff(extracted["rpeaks"]))
+        median_hr = np.median(heart_rate, keepdims=True)
+        mad_hr = median_abs_deviation(heart_rate).reshape([-1])
+
+        features = np.concatenate(
+            [median_temp.real, median_temp.imag, mad_temp.real, mad_temp.imag, median_hr, mad_hr]
+        )
+        X_train_features.append(features)
 
     return np.array(X_train_features)
 
