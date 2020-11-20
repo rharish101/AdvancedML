@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import yaml
-from biosppy.signals.ecg import extract_heartbeats, ssf_segmenter
+from biosppy.signals.ecg import ecg
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
 from imblearn.over_sampling import ADASYN
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
@@ -58,6 +58,8 @@ ISOLATION_SPACE: Final = {
     "contamination": hp.quniform("contamination", 0.05, 0.5, 0.05),
 }
 OUTLIER_SPACE: Final = {"loc": LOC_SPACE, "isolation": ISOLATION_SPACE}
+
+SAMPLING_RATE: Final = 300.0
 
 
 def __main(args: Namespace) -> None:
@@ -177,10 +179,11 @@ def get_ecg_features(X_train: CSVData) -> np.ndarray:
     X_train_features = []
 
     for x in X_train:
-        x = [v for v in x if not np.isnan(v)]
-        rpeaks = ssf_segmenter(x)[0]
-        beats = extract_heartbeats(x, rpeaks)[0]
-        X_train_features.append(np.append(np.mean(beats, axis=0), np.std(beats, axis=0)).tolist())
+        x = np.array([v for v in x if not np.isnan(v)])
+        beats = ecg(x, sampling_rate=SAMPLING_RATE, show=False)["templates"]
+        mean = np.mean(beats, axis=0)
+        std = np.std(beats, axis=0)
+        X_train_features.append(np.append(mean, std).tolist())
 
     return np.array(X_train_features)
 
