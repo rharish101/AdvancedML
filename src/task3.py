@@ -8,6 +8,7 @@ import yaml
 from biosppy.signals.ecg import ecg
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
 from imblearn.over_sampling import ADASYN
+from scipy.stats import median_abs_deviation
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import SVC
@@ -181,9 +182,9 @@ def get_ecg_features(X_train: CSVData) -> np.ndarray:
     for x in X_train:
         x = np.array([v for v in x if not np.isnan(v)])
         beats = ecg(x, sampling_rate=SAMPLING_RATE, show=False)["templates"]
-        mean = np.mean(beats, axis=0)
-        std = np.std(beats, axis=0)
-        X_train_features.append(np.append(mean, std).tolist())
+        median = np.median(beats, axis=0)
+        mad = median_abs_deviation(beats, axis=0)
+        X_train_features.append(np.append(median, mad).tolist())
 
     return np.array(X_train_features)
 
