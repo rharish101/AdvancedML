@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """The entry point for the scripts for Task 3."""
+import os
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -66,20 +67,29 @@ SAMPLING_RATE: Final = 300.0
 
 def __main(args: Namespace) -> None:
     # Read in data
-    X_train, X_header = read_csv(f"{args.data_dir}/{TRAINING_DATA_NAME}")
+
     Y_train, _ = read_csv(f"{args.data_dir}/{TRAINING_LABELS_NAME}")
 
-    if X_train is None or Y_train is None:
+    if Y_train is None:
         raise RuntimeError("There was a problem with reading CSV data")
 
-    if args.diagnose:
-        run_data_diagnostics(X_train, Y_train, header=X_header or ())
-
     # Remove training IDs, as they are in sorted order for training data
-    X_train = X_train[:, 1:]
     Y_train = Y_train[:, 1]
 
-    X_train = get_ecg_features(X_train)
+    if os.path.exists(args.train_features):
+        print("Loading features from %s..." % args.train_features)
+        X_train = np.load(args.train_features)
+    else:
+        X_train, X_header = read_csv(f"{args.data_dir}/{TRAINING_DATA_NAME}")
+
+        if X_train is None:
+            raise RuntimeError("There was a problem with reading CSV data")
+
+        X_train = X_train[:, 1:]
+        X_train = get_ecg_features(X_train, args.train_features)
+
+        if args.diagnose:
+            run_data_diagnostics(X_train, Y_train, header=X_header or ())
 
     if args.mode == "tune":
         print("Starting hyper-parameter tuning")
@@ -148,15 +158,20 @@ def __main(args: Namespace) -> None:
         print(f"Micro-average F1 score is: {score:.4f}")
 
     elif args.mode == "final":
-        X_test, _ = read_csv(f"{args.data_dir}/{TEST_DATA_PATH}")
-        if X_test is None:
-            raise RuntimeError("There was a problem with reading CSV data")
+        if os.path.exists(args.test_features):
+            print("Loading features from %s..." % args.test_features)
+            X_test = np.load(args.test_features)
+        else:
+            X_test, _ = read_csv(f"{args.data_dir}/{TEST_DATA_PATH}")
+            if X_test is None:
+                raise RuntimeError("There was a problem with reading CSV data")
+
+            X_test = X_test[:, 1:]
+            X_test = get_ecg_features(X_test, args.test_features)
 
         # Save test IDs as we need to add them to the submission file
-        test_ids = X_test[:, 0]
-        X_test = X_test[:, 1:]
-
-        X_test = get_ecg_features(X_test)
+        # test_ids = X_test[:, 0]
+        test_ids = np.array([i for i in range(len(X_test))])
 
         finalize_model(
             model,
@@ -176,11 +191,11 @@ def __main(args: Namespace) -> None:
         raise ValueError(f"Invalid mode: {args.mode}")
 
 
-def get_ecg_features(X_train: CSVData) -> np.ndarray:
+def get_ecg_features(raw_data: CSVData, path: str) -> np.ndarray:
     """Get average ECG heart beats."""
-    X_train_features = []
+    ecg_features = []
 
-    for x in X_train:
+    for x in raw_data:
         x = np.array([v for v in x if not np.isnan(v)])
         extracted = ecg(x, sampling_rate=SAMPLING_RATE, show=False)
         if len(extracted["rpeaks"]) <= 1:
@@ -200,9 +215,10 @@ def get_ecg_features(X_train: CSVData) -> np.ndarray:
         features = np.concatenate(
             [median_temp.real, median_temp.imag, mad_temp.real, mad_temp.imag, median_hr, mad_hr]
         )
-        X_train_features.append(features)
+        ecg_features.append(features)
 
-    return np.array(X_train_features)
+    np.save(path, ecg_features)
+    return np.array(ecg_features)
 
 
 def __loss(
@@ -397,6 +413,18 @@ if __name__ == "__main__":
         type=str,
         default="config/task3.yaml",
         help="the path to the YAML config for the hyper-parameters",
+    )
+    parser.add_argument(
+        "--test-features",
+        type=str,
+        default="config/task3-test-features.npy",
+        help="where the train features are stored or should be stored",
+    )
+    parser.add_argument(
+        "--train-features",
+        type=str,
+        default="config/task3-train-features.npy",
+        help="where the test features are stored or should be stored",
     )
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
 
