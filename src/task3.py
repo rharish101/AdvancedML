@@ -145,7 +145,7 @@ def __main(args: Namespace) -> None:
             outlier_detection=outlier_detection,
         )
 
-        print(f"Average balanced accuracy is: {score:.4f}")
+        print(f"Micro-average F1 score is: {score:.4f}")
 
     elif args.mode == "final":
         X_test, _ = read_csv(f"{args.data_dir}/{TEST_DATA_PATH}")
