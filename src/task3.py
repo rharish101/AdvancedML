@@ -19,7 +19,13 @@ from xgboost import XGBClassifier
 
 from typings import BaseClassifier, CSVData
 from utilities.data import read_csv, run_data_diagnostics
-from utilities.model import evaluate_model, finalize_model, visualize_model
+from utilities.model import (
+    evaluate_model,
+    feature_selection,
+    finalize_model,
+    read_selected_features,
+    visualize_model,
+)
 
 TASK_DATA_DIRECTORY: Final[str] = "data/task3"
 TRAINING_DATA_NAME: Final[str] = "X_train.csv"
@@ -142,8 +148,19 @@ def __main(args: Namespace) -> None:
     smote_fn = get_smote_fn(**config) if args.smote else None
     model = choose_model(args.model, **config)
     outlier_detection = (
-        get_outlier_detection(**config) if args.outlier is not None else None  # type:ignore
+        get_outlier_detection(args.outlier, **config)
+        if args.outlier is not None
+        else None  # type:ignore
     )
+
+    if args.select_features:
+        selected_features = feature_selection(
+            model, X_train, Y_train, args.cross_val, args.selected_features_path
+        )
+    else:
+        selected_features = read_selected_features(args.selected_features_path, X_train.shape[1])
+
+    X_train = X_train[:, selected_features]
 
     if args.mode == "eval":
         score = evaluate_model(
@@ -168,6 +185,8 @@ def __main(args: Namespace) -> None:
 
             X_test = X_test[:, 1:]
             X_test = get_ecg_features(X_test, args.test_features)
+
+        X_test = X_test[:, selected_features]
 
         # Save test IDs as we need to add them to the submission file
         # test_ids = X_test[:, 0]
@@ -255,7 +274,7 @@ def objective(
     Y_train: CSVData,
     model: str,
     smote: bool,
-    outlier: bool,
+    outlier: str,
     config: Dict[str, Union[float, int]],
 ) -> Dict[str, Any]:
     """Get the objective function for Hyperopt."""
@@ -264,7 +283,7 @@ def objective(
         model = choose_model(model, **config)  # type:ignore
 
         outlier_detection = (
-            get_outlier_detection(**config) if outlier is not None else None  # type:ignore
+            get_outlier_detection(outlier, **config) if outlier is not None else None  # type:ignore
         )
 
         # Keep k low for faster evaluation
@@ -285,15 +304,16 @@ def objective(
 
 
 def get_outlier_detection(
+    name: str,
     contamination: float,
-    n_estimators: Optional[int] = None,
-    n_neighbors: Optional[int] = None,
+    n_estimators: Optional[int] = 100,
+    n_neighbors: Optional[int] = 100,
     **kwargs,
 ) -> Any:
     """Get outlier detection model given the hyper-parameters."""
-    if n_neighbors is not None:
+    if name == "loc":
         return LocalOutlierFactor(contamination=contamination, n_neighbors=n_neighbors)
-    elif n_estimators is not None:
+    elif name == "isolation":
         return IsolationForest(
             contamination=contamination, n_estimators=n_estimators, random_state=0
         )
@@ -425,6 +445,17 @@ if __name__ == "__main__":
         type=str,
         default="config/task3-train-features.npy",
         help="where the test features are stored or should be stored",
+    )
+    parser.add_argument(
+        "--selected-features-path",
+        type=str,
+        default="config/features-task3.txt",
+        help="where the most optimal features are stored",
+    )
+    parser.add_argument(
+        "--select-features",
+        action="store_true",
+        help="whether to train the most optimal features",
     )
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
 

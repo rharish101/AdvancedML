@@ -252,6 +252,7 @@ def read_selected_features(features_path: str, number_of_features: int) -> List[
     The list of booleans indicating which features to preserve
     """
     if os.path.exists(features_path):
+        print("Loading selected features from %s..." % features_path)
         return [True if i == 1 else False for i in np.loadtxt(features_path, dtype=int)]
     else:
         warn(f"No saved features found at: {features_path}. All features will be kept.")
@@ -275,7 +276,7 @@ def feature_selection(
     -------
     The list of booleans indicating which features to select
     """
-    rec_sel = RFECV(model, step=5, cv=k)
+    rec_sel = RFECV(model, step=5, cv=k, verbose=1)
     rec_sel.fit(X_train, Y_train)
     np.savetxt(features_path, rec_sel.support_, fmt="%d")
     return rec_sel.support_
