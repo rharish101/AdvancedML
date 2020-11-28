@@ -1,6 +1,5 @@
 """Utility functions for model-related tasks."""
 import os
-from datetime import datetime
 from typing import Any, Callable, List, Optional
 from warnings import warn
 
@@ -23,14 +22,9 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.random import sample_without_replacement
-from tensorboardX import SummaryWriter
 
 from typings import BaseRegressor, CSVData
 from utilities.data import create_submission_file
-
-tensorboard_writer = SummaryWriter(
-    log_dir="logs/training" + datetime.now().strftime("-%Y%m%d-%H%M%S")
-)
 
 
 def evaluate_model_balanced_ensemble(
