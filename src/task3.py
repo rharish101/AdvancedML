@@ -83,7 +83,8 @@ def __main(args: Namespace) -> None:
         f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features, args.model == "nn"
     )
 
-    X_train = statistical_feauture_selection(X_train, args.model == "nn")
+    if args.select_features:
+        X_train = statistical_feauture_selection(X_train, args.model == "nn")
 
     if args.mode == "tune":
         print("Starting hyper-parameter tuning")
@@ -160,7 +161,8 @@ def __main(args: Namespace) -> None:
             f"{args.data_dir}/{TEST_DATA_PATH}", args.test_features, args.model == "nn"
         )
 
-        X_test = statistical_feauture_selection(X_test, args.model == "nn")
+        if args.select_features:
+            X_test = statistical_feauture_selection(X_test, args.model == "nn")
 
         # X_test = X_test[:, selected_features]
 
