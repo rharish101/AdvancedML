@@ -325,7 +325,12 @@ def visualize_model(model, X_test, Y_test):
 
     Y_test: Data labels for the evaluation data
     """
-    Y_probabilities = model.decision_function(X_test)
+    try:
+        Y_probabilities = model.predict_proba(X_test)
+    except AttributeError:
+        # Must be an SVM w/o probability=True
+        Y_probabilities = model.decision_function(X_test)
+
     _, axes = plt.subplots(ncols=3, figsize=(16, 5))
 
     # Plot confusion matrix

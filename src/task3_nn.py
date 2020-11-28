@@ -120,7 +120,9 @@ class NN(BaseClassifier):
 
         in_channels = X[0].shape[1]
         num_classes = len(class_count)
+        self.classes_ = np.arange(num_classes)
         total_batches = np.ceil(len(X) / self.batch_size)
+
         self._init_model_optim(in_channels, num_classes)
 
         if self.balance_weights:
