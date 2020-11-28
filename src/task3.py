@@ -376,6 +376,7 @@ def choose_model(
     svm_wt: float = 1.0,
     epochs: int = 50,
     batch_size: int = 64,
+    balance_weights: bool = True,
     **kwargs,
 ) -> BaseClassifier:
     """Choose a model given the name and hyper-parameters."""
@@ -401,7 +402,9 @@ def choose_model(
 
     random_forest_classifier = RandomForestClassifier()
 
-    nn_model = NN(epochs=epochs, batch_size=batch_size, log_dir=log_dir)
+    nn_model = NN(
+        epochs=epochs, batch_size=batch_size, log_dir=log_dir, balance_weights=balance_weights
+    )
 
     if name == "xgb":
         return xgb_model
