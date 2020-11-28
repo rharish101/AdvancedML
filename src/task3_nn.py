@@ -1,4 +1,6 @@
 """Neural network model for task 3."""
+import os
+from datetime import datetime
 from typing import Callable, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
@@ -81,6 +83,11 @@ class NN(BaseClassifier):
             Linear(64, num_classes),
         ).to(self.device)
 
+    @staticmethod
+    def _timestamp_dir(base_dir: str) -> str:
+        """Add a time-stamped directory after the base directory."""
+        return os.path.join(base_dir, datetime.now().isoformat())
+
     def _gen_batches(
         self, X: List[CSVData], y: Optional[CSVData] = None
     ) -> Iterator[Union[Tensor, Tuple[Tensor, Tensor]]]:
@@ -125,7 +132,7 @@ class NN(BaseClassifier):
 
         loss_func = CrossEntropyLoss(class_weights)
         optim = Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
-        writer = SummaryWriter(self.log_dir)
+        writer = SummaryWriter(self._timestamp_dir(self.log_dir))
 
         self.model.train()
         for ep in range(1, self.epochs + 1):

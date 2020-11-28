@@ -1,6 +1,5 @@
 """Utility functions for model-related tasks."""
 import os
-from datetime import datetime
 from typing import Any, Callable, List, Optional
 from warnings import warn
 
@@ -23,14 +22,9 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.random import sample_without_replacement
-from tensorboardX import SummaryWriter
 
 from typings import BaseRegressor, CSVData
 from utilities.data import create_submission_file
-
-tensorboard_writer = SummaryWriter(
-    log_dir="logs/training" + datetime.now().strftime("-%Y%m%d-%H%M%S")
-)
 
 
 def evaluate_model_balanced_ensemble(
@@ -103,6 +97,7 @@ def evaluate_model(
     k: int,
     smote_fn: Optional[Callable[[CSVData], BaseOverSampler]] = None,
     outlier_detection: Any = None,
+    single: bool = False,
 ) -> float:
     """Perform cross-validation on the given dataset and return the R^2 score.
 
@@ -113,6 +108,7 @@ def evaluate_model(
     Y_train: The training labels
     k: The number of folds in k-fold cross-validation
     smote_fn: The function that takes labels and returns SMOTE
+    single: Whether to evaluate only on a single fold (ie standard cross-validation)
 
     Returns
     -------
@@ -137,6 +133,9 @@ def evaluate_model(
         model.fit(X_train_cv, Y_train_cv)
         pred = model.predict(X_test_cv)
         score += f1_score(Y_test_cv, pred, average="micro")
+
+        if single:
+            return score
 
     return score / k
 
