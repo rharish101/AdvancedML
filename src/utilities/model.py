@@ -1,6 +1,6 @@
 """Utility functions for model-related tasks."""
 import os
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List, Optional, Tuple
 from warnings import warn
 
 import matplotlib.pyplot as plt
@@ -98,7 +98,7 @@ def evaluate_model(
     smote_fn: Optional[Callable[[CSVData], BaseOverSampler]] = None,
     outlier_detection: Any = None,
     single: bool = False,
-) -> float:
+) -> Tuple[float, float]:
     """Perform cross-validation on the given dataset and return the R^2 score.
 
     Parameters
@@ -112,9 +112,11 @@ def evaluate_model(
 
     Returns
     -------
+    The training score
     The validation score
     """
-    score = 0
+    train_score = 0
+    val_score = 0
     kf = StratifiedKFold(n_splits=k, shuffle=True, random_state=0)
 
     for train_index, test_index in kf.split(X_train, Y_train):
@@ -131,13 +133,17 @@ def evaluate_model(
             X_train_cv, Y_train_cv = smote.fit_resample(X_train_cv, Y_train_cv)
 
         model.fit(X_train_cv, Y_train_cv)
-        pred = model.predict(X_test_cv)
-        score += f1_score(Y_test_cv, pred, average="micro")
+
+        train_pred = model.predict(X_train_cv)
+        train_score += f1_score(Y_train_cv, train_pred, average="micro")
+
+        test_pred = model.predict(X_test_cv)
+        val_score += f1_score(Y_test_cv, test_pred, average="micro")
 
         if single:
-            return score
+            return train_score, val_score
 
-    return score / k
+    return train_score / k, val_score / k
 
 
 def finalize_model(

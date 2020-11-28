@@ -140,7 +140,7 @@ def __main(args: Namespace) -> None:
     )
 
     if args.mode == "eval":
-        score = evaluate_model(
+        train_score, val_score = evaluate_model(
             model,
             X_train,
             Y_train,
@@ -150,7 +150,8 @@ def __main(args: Namespace) -> None:
             single=args.single,
         )
 
-        print(f"Micro-average F1 score is: {score:.4f}")
+        print(f"Micro-average F1 training score is: {train_score:.4f}")
+        print(f"Micro-average F1 validation score is: {val_score:.4f}")
 
     elif args.mode == "final":
         X_test = get_ecg_features(
