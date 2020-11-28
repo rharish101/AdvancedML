@@ -1,41 +1,27 @@
 """Neural network model for task 3."""
 import os
 from datetime import datetime
-from typing import Callable, Iterator, List, Optional, Tuple, Union
+from typing import Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from torch import Tensor
 from torch.nn import (
-    GRU,
     BatchNorm1d,
     Conv1d,
     CrossEntropyLoss,
+    Flatten,
     Linear,
     Module,
     ReLU,
     Sequential,
     Softmax,
 )
-from torch.nn.utils.rnn import pad_sequence
 from torch.optim import Adam
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from typings import BaseClassifier, CSVData
-
-
-class Lambda(Module):
-    """Layer for custom functions."""
-
-    def __init__(self, func: Callable[[Tensor], Tensor]):
-        """Store the function."""
-        super().__init__()
-        self.func = func
-
-    def forward(self, x: Tensor) -> Tensor:
-        """Return the function output."""
-        return self.func(x)
 
 
 class ResidualBlock(Module):
@@ -104,16 +90,13 @@ class NN(BaseClassifier):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def _init_model(self, in_channels: int, num_classes: int) -> None:
+    def _init_model(self, num_classes: int) -> None:
         self.model = Sequential(
-            Lambda(lambda x: x.permute(1, 2, 0)),  # [l, n, c] => [n, c, l]
-            Conv1d(in_channels, 32, 3, padding=2),
+            Conv1d(1, 32, 3, padding=1),
             ResidualBlock(32),
             ResidualBlock(32),
-            Lambda(lambda x: x.permute(2, 0, 1)),  # [n, c, l] => [l, n, c]
-            GRU(32, 32),
-            Lambda(lambda x: x[0][-1]),  # [l, n, c] => [n, c]
-            Linear(32, num_classes),
+            Flatten(),
+            Linear(32 * 180, num_classes),
         ).to(self.device)
 
     @staticmethod
@@ -122,17 +105,20 @@ class NN(BaseClassifier):
         return os.path.join(base_dir, datetime.now().isoformat())
 
     def _gen_batches(
-        self, rng: np.random.Generator, X: List[CSVData], y: Optional[CSVData] = None
+        self,
+        X: List[CSVData],
+        y: Optional[CSVData] = None,
+        rng: Optional[np.random.Generator] = None,
     ) -> Iterator[Union[Tensor, Tuple[Tensor, Tensor]]]:
         """Yield data elements as batches."""
         indices = np.arange(len(X))
-        rng.shuffle(indices)
+        if rng is not None:
+            rng.shuffle(indices)
 
         for i in range(0, len(X), self.batch_size):
             batch_indices = indices[i : i + self.batch_size]
-            batch_X = pad_sequence(
-                [torch.from_numpy(X[i].astype(np.float32)) for i in batch_indices]
-            ).to(self.device)
+            batch_X = torch.from_numpy(X[indices]).to(self.device)
+            batch_X = batch_X.unsqueeze(1)  # [n, l] => [n, 1, l]
 
             if y is None:
                 yield batch_X
@@ -140,7 +126,7 @@ class NN(BaseClassifier):
                 batch_y = torch.from_numpy(y[batch_indices]).to(self.device)
                 yield batch_X, batch_y
 
-    def fit(self, X: List[CSVData], y: CSVData) -> None:
+    def fit(self, X: CSVData, y: CSVData) -> None:
         """Initialize and train the model.
 
         Parameters
@@ -148,15 +134,15 @@ class NN(BaseClassifier):
         X: The list of 2D input data where the 1st dimension is of variable length
         y: The corresponding output integer labels
         """
+        X = X.astype(np.float32)
         y = y.astype(np.int64)
-        class_count = np.bincount(y.astype(np.int64))
 
-        in_channels = X[0].shape[1]
+        class_count = np.bincount(y.astype(np.int64))
         num_classes = len(class_count)
         self.classes_ = np.arange(num_classes)
         total_batches = np.ceil(len(X) / self.batch_size)
 
-        self._init_model(in_channels, num_classes)
+        self._init_model(num_classes)
 
         if self.balance_weights:
             class_weights = torch.from_numpy((1 / class_count).astype(np.float32)).to(self.device)
@@ -178,7 +164,7 @@ class NN(BaseClassifier):
             running_loss = 0.0
 
             for batch_X, batch_y in tqdm(
-                self._gen_batches(np_rng, X, y),
+                self._gen_batches(X, y, np_rng),
                 desc=f"Epoch {ep}/{self.epochs}",
                 total=int(total_batches),
             ):
@@ -192,7 +178,7 @@ class NN(BaseClassifier):
             for name, param in self.model.named_parameters():
                 writer.add_histogram(name, param, ep)
 
-    def predict_proba(self, X: List[CSVData]) -> np.ndarray:
+    def predict_proba(self, X: CSVData) -> np.ndarray:
         """Predict the class probabilites.
 
         Parameters
@@ -203,13 +189,13 @@ class NN(BaseClassifier):
         -------
         The 2D array of class probabilities
         """
+        X = X.astype(np.float32)
         pred = []
         softmax_func = Softmax(dim=-1)
-        np_rng = np.random.default_rng(None)
 
         self.model.eval()
         with torch.no_grad():
-            for batch_X in self._gen_batches(np_rng, X):
+            for batch_X in self._gen_batches(X):
                 pred.append(softmax_func(self.model(batch_X)).cpu().numpy())
 
         return np.concatenate(pred, axis=0)
