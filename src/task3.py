@@ -12,6 +12,7 @@ from imblearn.over_sampling import ADASYN
 from scipy.fft import fft
 from scipy.stats import median_abs_deviation
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
+from sklearn.feature_selection import VarianceThreshold
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import SVC
 from tqdm import tqdm
@@ -81,6 +82,8 @@ def __main(args: Namespace) -> None:
     X_train = get_ecg_features(
         f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features, args.model == "nn"
     )
+
+    X_train = statistical_feauture_selection(X_train, args.model == "nn")
 
     if args.mode == "tune":
         print("Starting hyper-parameter tuning")
@@ -155,6 +158,9 @@ def __main(args: Namespace) -> None:
         X_test = get_ecg_features(
             f"{args.data_dir}/{TEST_DATA_PATH}", args.test_features, args.model == "nn"
         )
+
+        X_test = statistical_feauture_selection(X_test, args.model == "nn")
+
         # X_test = X_test[:, selected_features]
 
         # Assuming test IDs as in ascending order
@@ -176,6 +182,30 @@ def __main(args: Namespace) -> None:
 
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
+
+
+def statistical_feauture_selection(data: np.ndarray, time_series: bool) -> np.ndarray:
+    """Do simple feature selection based on statistical characteristics of data."""
+    vt = VarianceThreshold()
+
+    if time_series:
+        shapes = [x.shape[0] for x in data]
+        data = [x for y in data for x in y]
+
+    data = vt.fit_transform(data)
+
+    if time_series:
+        X_train_new = []
+
+        i = 0
+        for shape in shapes:
+            j = i
+            i += shape
+            X_train_new.append(data[j:i])
+
+        data = np.array(X_train_new, dtype=object)
+
+    return data
 
 
 def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) -> np.ndarray:
