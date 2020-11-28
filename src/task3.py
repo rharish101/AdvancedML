@@ -9,8 +9,6 @@ import yaml
 from biosppy.signals.ecg import ecg
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
 from imblearn.over_sampling import ADASYN
-from scipy.fft import fft
-from scipy.stats import median_abs_deviation
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.neighbors import LocalOutlierFactor
@@ -24,10 +22,13 @@ from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
 from utilities.model import evaluate_model, finalize_model, visualize_model
 
-TASK_DATA_DIRECTORY: Final[str] = "data/task3"
-TRAINING_DATA_NAME: Final[str] = "X_train.csv"
-TRAINING_LABELS_NAME: Final[str] = "y_train.csv"
-TEST_DATA_PATH: Final[str] = "X_test.csv"
+TRAINING_DATA_CSV: Final = "X_train.csv"
+TRAINING_LABELS_CSV: Final = "y_train.csv"
+TEST_DATA_CSV: Final = "X_test.csv"
+
+TRAINING_FEAT_NPY: Final = "train-features.npy"
+TRAINING_LABELS_NPY: Final = "train-labels.npy"
+TEST_FEAT_NPY: Final = "test-features.npy"
 
 # Search distributions for hyper-parameters
 XGB_SPACE: Final = {
@@ -68,21 +69,57 @@ OUTLIER_SPACE: Final = {"loc": LOC_SPACE, "isolation": ISOLATION_SPACE}
 SAMPLING_RATE: Final = 300.0
 
 
+class ECGModel(BaseClassifier):
+    """Model that trains on a single heartbeat, but predicts on multiple.
+
+    This is to be used with `utilities.model.finalize_model`.
+    """
+
+    def __init__(self, model: BaseClassifier):
+        """Store the actual model."""
+        super().__init__()
+        self.model = model
+
+    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
+        """Train the model.
+
+        Parameters
+        ----------
+        X: The 2D input data of heart beats
+        y: The corresponding output integer labels
+        """
+        self.model.fit(X, y)
+
+    def predict(self, X: List[CSVData]) -> np.ndarray:
+        """Predict the classes by weighing class probabilites.
+
+        Parameters
+        ----------
+        X: The list of 2D input data where the 1st dimension is of variable length
+
+        Returns
+        -------
+        The 2D array of class probabilities
+        """
+        pred = []
+
+        for xi in X:
+            try:
+                probabilities = self.model.predict_proba(xi)
+            except AttributeError:
+                # Must be an SVM w/o probability=True
+                probabilities = self.model.decision_function(xi)
+            pred.append(probabilities.mean(axis=0))
+
+        return np.array(pred).argmax(axis=1)
+
+
 def __main(args: Namespace) -> None:
+    if not os.path.exists(args.features_dir):
+        os.makedirs(args.features_dir)
+
     # Read in data
-
-    Y_train, _ = read_csv(f"{args.data_dir}/{TRAINING_LABELS_NAME}")
-
-    if Y_train is None:
-        raise RuntimeError("There was a problem with reading CSV data")
-
-    # Remove training IDs, as they are in sorted order for training data
-    Y_train = Y_train[:, 1]
-
-    X_train = get_ecg_features(
-        f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features, args.model == "nn"
-    )
-
+    X_train, Y_train = get_train_data(args.data_dir, args.features_dir)
     if args.select_features:
         X_train = statistical_feauture_selection(X_train, args.model == "nn")
 
@@ -158,20 +195,15 @@ def __main(args: Namespace) -> None:
         print(f"Micro-average F1 validation score is: {val_score:.4f}")
 
     elif args.mode == "final":
-        X_test = get_ecg_features(
-            f"{args.data_dir}/{TEST_DATA_PATH}", args.test_features, args.model == "nn"
-        )
-
+        X_test = get_test_data(args.data_dir, args.features_dir)
         if args.select_features:
             X_test = statistical_feauture_selection(X_test, args.model == "nn")
-
-        # X_test = X_test[:, selected_features]
 
         # Assuming test IDs as in ascending order
         test_ids = np.arange(len(X_test))
 
         finalize_model(
-            model,
+            ECGModel(model),
             X_train,
             Y_train,
             X_test,
@@ -212,72 +244,76 @@ def statistical_feauture_selection(data: np.ndarray, time_series: bool) -> np.nd
     return data
 
 
-def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) -> np.ndarray:
-    """Get ECG features from the raw data or the saved transformed data."""
+def get_train_data(data_dir: str, features_dir: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Get training data from the raw data or the saved pre-processed data."""
+    features_path = f"{features_dir}/{TRAINING_FEAT_NPY}"
+    labels_path = f"{features_dir}/{TRAINING_LABELS_NPY}"
+
+    if os.path.exists(features_path) and os.path.exists(labels_path):
+        print("Loading pre-processed training data...")
+        X_train = np.load(features_path)
+        y_train = np.load(labels_path)
+        return X_train, y_train
+
+    # Read in data
+    X_train, _ = read_csv(f"{data_dir}/{TRAINING_DATA_CSV}")
+    Y_train, _ = read_csv(f"{data_dir}/{TRAINING_LABELS_CSV}")
+
+    if X_train is None or Y_train is None:
+        raise RuntimeError("There was a problem with reading CSV data")
+
+    # Remove training IDs, as they are in sorted order for training data
+    X_train = X_train[:, 1:]
+    Y_train = Y_train[:, 1]
+
+    ecg_features = []
+    new_labels = []
+
+    print("Pre-processing training data with biosppy...")
+    for x, y in tqdm(zip(X_train, Y_train), total=len(X_train)):
+        x = np.array([v for v in x if not np.isnan(v)])
+        beats = ecg(x, sampling_rate=SAMPLING_RATE, show=False)["templates"]
+        ecg_features.append(beats)
+        new_labels += [y] * len(beats)
+
+    ecg_features = np.concatenate(ecg_features, axis=0)
+    new_labels = np.array(new_labels)
+
+    np.save(features_path, ecg_features)
+    np.save(labels_path, new_labels)
+
+    return ecg_features, new_labels
+
+
+def get_test_data(data_dir: str, features_dir: str) -> np.ndarray:
+    """Get test data from the raw data or the saved pre-processed data."""
+    features_path = f"{features_dir}/{TEST_FEAT_NPY}"
+
+    if os.path.exists(features_path):
+        print("Loading pre-processed test data...")
+        X_test = np.load(features_path, allow_pickle=True)
+        return X_test
+
+    # Read in data
+    X_test, _ = read_csv(f"{data_dir}/{TEST_DATA_CSV}")
+
+    if X_test is None:
+        raise RuntimeError("There was a problem with reading CSV data")
+
+    # Remove test IDs, as they are in sorted order for test data
+    X_test = X_test[:, 1:]
+
     ecg_features = []
 
-    if os.path.exists(transformed_path):
-        print("Loading features from %s..." % transformed_path)
-        ecg_features = np.load(transformed_path, allow_pickle=True)
+    print("Pre-processing test data with biosppy...")
+    for x in tqdm(X_test):
+        x = np.array([v for v in x if not np.isnan(v)])
+        beats = ecg(x, sampling_rate=SAMPLING_RATE, show=False)["templates"]
+        ecg_features.append(beats)
 
-        if stats:
-            # If the model is an NN, we want the raw transformed signal
-            return ecg_features
-
-        return extract_statistics(ecg_features)
-    else:
-        raw_data, _ = read_csv(raw_path)
-
-        if raw_data is None:
-            raise RuntimeError("There was a problem with reading CSV data")
-
-        raw_data = raw_data[:, 1:]
-
-        print("Transforming signal with biosppy...")
-
-        for x in tqdm(raw_data):
-            x = np.array([v for v in x if not np.isnan(v)])
-            extracted = ecg(x, sampling_rate=SAMPLING_RATE, show=False)
-            if len(extracted["rpeaks"]) <= 1:
-                continue
-
-            beats = fft(extracted["templates"])
-
-            # We don't use the given heart rate as it applies physiological limits
-            # (40 <= heart rate <= 200), and thus this may be empty. We also don't care about
-            # smoothing it, as we're using median and MAD anyway.
-            heart_rate = SAMPLING_RATE * (60.0 / np.diff(extracted["rpeaks"]))
-            # Duplicate last element so that heart_rate and beats are of same length
-            heart_rate = np.append(heart_rate, heart_rate[-1]).reshape(-1, 1)
-            ecg_features.append(np.hstack((np.real(beats), np.imag(beats), heart_rate)))
-
-        ecg_features = np.array(ecg_features, dtype=object)
-        np.save(transformed_path, ecg_features)
-
-        if stats:
-            # If the model is an NN, we want the raw transformed signal
-            return ecg_features
-        else:
-            return extract_statistics(ecg_features)
-
-
-def extract_statistics(transformed: np.ndarray) -> np.ndarray:
-    """Extract median and deviation statistics from the transformed ECG signals."""
-    ecg_features = []
-
-    print("Extracting statistics from transformed signals...")
-
-    for x in tqdm(transformed):
-        median_temp = np.median(x[:, :-1], axis=0)
-        mad_temp = median_abs_deviation(x[:, :-1], axis=0)
-
-        median_hr = np.median(x[:, -1], keepdims=True)
-        mad_hr = median_abs_deviation(x[:, -1]).reshape([-1])
-
-        features = np.concatenate([median_temp, mad_temp, median_hr, mad_hr])
-        ecg_features.append(features)
-
-    return np.array(ecg_features)
+    ecg_features = np.array(ecg_features, dtype=object)
+    np.save(features_path, ecg_features)
+    return ecg_features
 
 
 def __loss(
@@ -471,12 +507,17 @@ if __name__ == "__main__":
         help="path to the directory containing the task data",
     )
     parser.add_argument(
+        "--features-dir",
+        type=str,
+        default="config/task3/",
+        help="where the extracted features are stored or should be stored",
+    )
+    parser.add_argument(
         "--log-dir",
         type=str,
         default="logs/task3",
         help="path to the directory where to dump logs",
     )
-    parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
     parser.add_argument("--smote", action="store_true", help="use SMOTE")
     parser.add_argument(
         "--outlier",
@@ -494,18 +535,6 @@ if __name__ == "__main__":
         type=str,
         default="config/task3.yaml",
         help="the path to the YAML config for the hyper-parameters",
-    )
-    parser.add_argument(
-        "--test-features",
-        type=str,
-        default="config/task3-test-features.npy",
-        help="where the train features are stored or should be stored",
-    )
-    parser.add_argument(
-        "--train-features",
-        type=str,
-        default="config/task3-train-features.npy",
-        help="where the test features are stored or should be stored",
     )
     parser.add_argument(
         "--selected-features-path",
