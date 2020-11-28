@@ -73,7 +73,7 @@ class NN(BaseClassifier):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def _init_model_optim(self, in_channels: int, num_classes: int) -> None:
+    def _init_model(self, in_channels: int, num_classes: int) -> None:
         self.model = Sequential(
             Lambda(lambda x: x.permute(1, 2, 0)),  # [l, n, c] => [n, c, l]
             Conv1d(in_channels, 128, 3, bias=False),
@@ -125,7 +125,7 @@ class NN(BaseClassifier):
         self.classes_ = np.arange(num_classes)
         total_batches = np.ceil(len(X) / self.batch_size)
 
-        self._init_model_optim(in_channels, num_classes)
+        self._init_model(in_channels, num_classes)
 
         if self.balance_weights:
             class_weights = torch.from_numpy((1 / class_count).astype(np.float32)).to(self.device)
