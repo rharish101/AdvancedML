@@ -147,6 +147,7 @@ def __main(args: Namespace) -> None:
             k=args.cross_val,
             smote_fn=smote_fn,
             outlier_detection=outlier_detection,
+            single=args.single,
         )
 
         print(f"Micro-average F1 score is: {score:.4f}")
@@ -491,6 +492,11 @@ if __name__ == "__main__":
         type=int,
         default=5,
         help="the k for k-fold cross-validation",
+    )
+    eval_parser.add_argument(
+        "--single",
+        action="store_true",
+        help="whether to evaluate only on a single fold (ie standard cross-validation)",
     )
 
     # Sub-parser for final training
