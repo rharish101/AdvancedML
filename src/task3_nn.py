@@ -38,6 +38,37 @@ class Lambda(Module):
         return self.func(x)
 
 
+class ResidualBlock(Module):
+    """Layer for residual block.
+
+    The block consists of:
+        * Conv
+        * BatchNorm
+        * ReLU
+        * Conv
+        * Skip connection
+        * BatchNorm
+        * ReLU
+        * MaxPool
+    """
+
+    def __init__(self, channels: int, kernel_size: int = 3):
+        """Initialize the layers."""
+        super().__init__()
+        padding = (kernel_size - 1) // 2
+        self.before = Sequential(
+            Conv1d(channels, channels, kernel_size=kernel_size, bias=False, padding=padding),
+            BatchNorm1d(channels),
+            ReLU(),
+            Conv1d(channels, channels, kernel_size=kernel_size, bias=False, padding=padding),
+        )
+        self.after = Sequential(BatchNorm1d(channels), ReLU())
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Return the output."""
+        return self.after(self.before(x) + x)
+
+
 class NN(BaseClassifier):
     """The neural network model for time-series classification."""
 
@@ -76,13 +107,13 @@ class NN(BaseClassifier):
     def _init_model(self, in_channels: int, num_classes: int) -> None:
         self.model = Sequential(
             Lambda(lambda x: x.permute(1, 2, 0)),  # [l, n, c] => [n, c, l]
-            Conv1d(in_channels, 128, 3, bias=False),
-            BatchNorm1d(128),
-            ReLU(),
+            Conv1d(in_channels, 32, 3, padding=2),
+            ResidualBlock(32),
+            ResidualBlock(32),
             Lambda(lambda x: x.permute(2, 0, 1)),  # [n, c, l] => [l, n, c]
-            GRU(128, 64),
+            GRU(32, 32),
             Lambda(lambda x: x[0][-1]),  # [l, n, c] => [n, c]
-            Linear(64, num_classes),
+            Linear(32, num_classes),
         ).to(self.device)
 
     @staticmethod
