@@ -117,7 +117,7 @@ class NN(BaseClassifier):
 
         for i in range(0, len(X), self.batch_size):
             batch_indices = indices[i : i + self.batch_size]
-            batch_X = torch.from_numpy(X[indices]).to(self.device)
+            batch_X = torch.from_numpy(X[batch_indices]).to(self.device)
             batch_X = batch_X.unsqueeze(1)  # [n, l] => [n, 1, l]
 
             if y is None:
