@@ -141,6 +141,8 @@ class NN(BaseClassifier):
                 optim.step()
 
             writer.add_scalar("loss", running_loss / total_batches, ep)
+            for name, param in self.model.named_parameters():
+                writer.add_histogram(name, param, ep)
 
     def predict_proba(self, X: List[CSVData]) -> np.ndarray:
         """Predict the class probabilites.
