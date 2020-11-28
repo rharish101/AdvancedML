@@ -436,7 +436,11 @@ def choose_model(
     random_forest_classifier = RandomForestClassifier()
 
     nn_model = NN(
-        epochs=epochs, batch_size=batch_size, log_dir=log_dir, balance_weights=balance_weights
+        epochs=epochs,
+        batch_size=batch_size,
+        log_dir=log_dir,
+        balance_weights=balance_weights,
+        random_state=0,
     )
 
     if name == "xgb":

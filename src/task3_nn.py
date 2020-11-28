@@ -49,6 +49,7 @@ class NN(BaseClassifier):
         learning_rate: float = 1e-3,
         weight_decay: float = 0.0,
         balance_weights: bool = True,
+        random_state: Optional[int] = None,
     ) -> None:
         """Store hyper-params.
 
@@ -68,6 +69,7 @@ class NN(BaseClassifier):
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.balance_weights = balance_weights
+        self.random_state = random_state
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -89,11 +91,11 @@ class NN(BaseClassifier):
         return os.path.join(base_dir, datetime.now().isoformat())
 
     def _gen_batches(
-        self, X: List[CSVData], y: Optional[CSVData] = None
+        self, rng: np.random.Generator, X: List[CSVData], y: Optional[CSVData] = None
     ) -> Iterator[Union[Tensor, Tuple[Tensor, Tensor]]]:
         """Yield data elements as batches."""
         indices = np.arange(len(X))
-        np.random.shuffle(indices)
+        rng.shuffle(indices)
 
         for i in range(0, len(X), self.batch_size):
             batch_indices = indices[i : i + self.batch_size]
@@ -136,12 +138,16 @@ class NN(BaseClassifier):
         optim = Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         writer = SummaryWriter(self._timestamp_dir(self.log_dir))
 
+        if self.random_state is not None:
+            torch.manual_seed(self.random_state)
+        np_rng = np.random.default_rng(self.random_state)
+
         self.model.train()
         for ep in range(1, self.epochs + 1):
             running_loss = 0.0
 
             for batch_X, batch_y in tqdm(
-                self._gen_batches(X, y),
+                self._gen_batches(np_rng, X, y),
                 desc=f"Epoch {ep}/{self.epochs}",
                 total=int(total_batches),
             ):
@@ -168,10 +174,11 @@ class NN(BaseClassifier):
         """
         pred = []
         softmax_func = Softmax(dim=-1)
+        np_rng = np.random.default_rng(None)
 
         self.model.eval()
         with torch.no_grad():
-            for batch_X in self._gen_batches(X):
+            for batch_X in self._gen_batches(np_rng, X):
                 pred.append(softmax_func(self.model(batch_X)).cpu().numpy())
 
         return np.concatenate(pred, axis=0)
