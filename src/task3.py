@@ -14,18 +14,14 @@ from scipy.stats import median_abs_deviation
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import SVC
+from tqdm import tqdm
 from typing_extensions import Final
 from xgboost import XGBClassifier
 
+from task3_nn import NN
 from typings import BaseClassifier, CSVData
-from utilities.data import read_csv, run_data_diagnostics
-from utilities.model import (
-    evaluate_model,
-    feature_selection,
-    finalize_model,
-    read_selected_features,
-    visualize_model,
-)
+from utilities.data import read_csv
+from utilities.model import evaluate_model, finalize_model, visualize_model
 
 TASK_DATA_DIRECTORY: Final[str] = "data/task3"
 TRAINING_DATA_NAME: Final[str] = "X_train.csv"
@@ -82,20 +78,9 @@ def __main(args: Namespace) -> None:
     # Remove training IDs, as they are in sorted order for training data
     Y_train = Y_train[:, 1]
 
-    if os.path.exists(args.train_features):
-        print("Loading features from %s..." % args.train_features)
-        X_train = np.load(args.train_features)
-    else:
-        X_train, X_header = read_csv(f"{args.data_dir}/{TRAINING_DATA_NAME}")
-
-        if X_train is None:
-            raise RuntimeError("There was a problem with reading CSV data")
-
-        X_train = X_train[:, 1:]
-        X_train = get_ecg_features(X_train, args.train_features)
-
-        if args.diagnose:
-            run_data_diagnostics(X_train, Y_train, header=X_header or ())
+    X_train = get_ecg_features(
+        f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features, args.model == "nn"
+    )
 
     if args.mode == "tune":
         print("Starting hyper-parameter tuning")
@@ -121,6 +106,7 @@ def __main(args: Namespace) -> None:
                 X_train,
                 Y_train,
                 args.model,
+                args.log_dir,
                 args.smote,
                 args.outlier,
                 {**config, **saved_config},
@@ -146,21 +132,12 @@ def __main(args: Namespace) -> None:
     config = {} if config is None else config
 
     smote_fn = get_smote_fn(**config) if args.smote else None
-    model = choose_model(args.model, **config)
+    model = choose_model(args.model, args.log_dir, **config)
     outlier_detection = (
         get_outlier_detection(args.outlier, **config)
         if args.outlier is not None
         else None  # type:ignore
     )
-
-    if args.select_features:
-        selected_features = feature_selection(
-            model, X_train, Y_train, args.cross_val, args.selected_features_path
-        )
-    else:
-        selected_features = read_selected_features(args.selected_features_path, X_train.shape[1])
-
-    X_train = X_train[:, selected_features]
 
     if args.mode == "eval":
         score = evaluate_model(
@@ -175,22 +152,13 @@ def __main(args: Namespace) -> None:
         print(f"Micro-average F1 score is: {score:.4f}")
 
     elif args.mode == "final":
-        if os.path.exists(args.test_features):
-            print("Loading features from %s..." % args.test_features)
-            X_test = np.load(args.test_features)
-        else:
-            X_test, _ = read_csv(f"{args.data_dir}/{TEST_DATA_PATH}")
-            if X_test is None:
-                raise RuntimeError("There was a problem with reading CSV data")
+        X_test = get_ecg_features(
+            f"{args.data_dir}/{TEST_DATA_PATH}", args.test_features, args.model == "nn"
+        )
+        # X_test = X_test[:, selected_features]
 
-            X_test = X_test[:, 1:]
-            X_test = get_ecg_features(X_test, args.test_features)
-
-        X_test = X_test[:, selected_features]
-
-        # Save test IDs as we need to add them to the submission file
-        # test_ids = X_test[:, 0]
-        test_ids = np.array([i for i in range(len(X_test))])
+        # Assuming test IDs as in ascending order
+        test_ids = np.arange(len(X_test))
 
         finalize_model(
             model,
@@ -210,33 +178,71 @@ def __main(args: Namespace) -> None:
         raise ValueError(f"Invalid mode: {args.mode}")
 
 
-def get_ecg_features(raw_data: CSVData, path: str) -> np.ndarray:
-    """Get average ECG heart beats."""
+def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) -> np.ndarray:
+    """Get ECG features from the raw data or the saved transformed data."""
     ecg_features = []
 
-    for x in raw_data:
-        x = np.array([v for v in x if not np.isnan(v)])
-        extracted = ecg(x, sampling_rate=SAMPLING_RATE, show=False)
-        if len(extracted["rpeaks"]) <= 1:
-            continue
+    if os.path.exists(transformed_path):
+        print("Loading features from %s..." % transformed_path)
+        ecg_features = np.load(transformed_path, allow_pickle=True)
 
-        beats = extracted["templates"]
-        median_temp = fft(np.median(beats, axis=0))
-        mad_temp = fft(median_abs_deviation(beats, axis=0))
+        if stats:
+            # If the model is an NN, we want the raw transformed signal
+            return ecg_features
 
-        # We don't use the given heart rate as it applies physiological limits
-        # (40 <= heart rate <= 200), and thus this may be empty. We also don't care about smoothing
-        # it, as we're using median and MAD anyway.
-        heart_rate = SAMPLING_RATE * (60.0 / np.diff(extracted["rpeaks"]))
-        median_hr = np.median(heart_rate, keepdims=True)
-        mad_hr = median_abs_deviation(heart_rate).reshape([-1])
+        return extract_statistics(ecg_features)
+    else:
+        raw_data, _ = read_csv(raw_path)
 
-        features = np.concatenate(
-            [median_temp.real, median_temp.imag, mad_temp.real, mad_temp.imag, median_hr, mad_hr]
-        )
+        if raw_data is None:
+            raise RuntimeError("There was a problem with reading CSV data")
+
+        raw_data = raw_data[:, 1:]
+
+        print("Transforming signal with biosppy...")
+
+        for x in tqdm(raw_data):
+            x = np.array([v for v in x if not np.isnan(v)])
+            extracted = ecg(x, sampling_rate=SAMPLING_RATE, show=False)
+            if len(extracted["rpeaks"]) <= 1:
+                continue
+
+            beats = fft(extracted["templates"])
+
+            # We don't use the given heart rate as it applies physiological limits
+            # (40 <= heart rate <= 200), and thus this may be empty. We also don't care about
+            # smoothing it, as we're using median and MAD anyway.
+            heart_rate = SAMPLING_RATE * (60.0 / np.diff(extracted["rpeaks"]))
+            # Duplicate last element so that heart_rate and beats are of same length
+            heart_rate = np.append(heart_rate, heart_rate[-1]).reshape(-1, 1)
+            ecg_features.append(np.hstack((np.real(beats), np.imag(beats), heart_rate)))
+
+        ecg_features = np.array(ecg_features, dtype=object)
+        np.save(transformed_path, ecg_features)
+
+        if stats:
+            # If the model is an NN, we want the raw transformed signal
+            return ecg_features
+        else:
+            return extract_statistics(ecg_features)
+
+
+def extract_statistics(transformed: np.ndarray) -> np.ndarray:
+    """Extract median and deviation statistics from the transformed ECG signals."""
+    ecg_features = []
+
+    print("Extracting statistics from transformed signals...")
+
+    for x in tqdm(transformed):
+        median_temp = np.median(x[:, :-1], axis=0)
+        mad_temp = median_abs_deviation(x[:, :-1], axis=0)
+
+        median_hr = np.median(x[:, -1], keepdims=True)
+        mad_hr = median_abs_deviation(x[:, -1]).reshape([-1])
+
+        features = np.concatenate([median_temp, mad_temp, median_hr, mad_hr])
         ecg_features.append(features)
 
-    np.save(path, ecg_features)
     return np.array(ecg_features)
 
 
@@ -273,6 +279,7 @@ def objective(
     X_train: CSVData,
     Y_train: CSVData,
     model: str,
+    log_dir: str,
     smote: bool,
     outlier: str,
     config: Dict[str, Union[float, int]],
@@ -280,7 +287,7 @@ def objective(
     """Get the objective function for Hyperopt."""
     try:
         smote_fn = get_smote_fn(**config) if smote else None  # type:ignore
-        model = choose_model(model, **config)  # type:ignore
+        model = choose_model(model, log_dir, **config)  # type:ignore
 
         outlier_detection = (
             get_outlier_detection(outlier, **config) if outlier is not None else None  # type:ignore
@@ -352,6 +359,7 @@ def get_smote_fn(
 
 def choose_model(
     name: str,
+    log_dir: str = "logs",
     n_estimators: int = 100,
     max_depth: int = 6,
     learning_rate: float = 0.3,
@@ -365,6 +373,8 @@ def choose_model(
     alpha_2: float = 1.0,
     C: float = 1.0,
     svm_wt: float = 1.0,
+    epochs: int = 50,
+    batch_size: int = 64,
     **kwargs,
 ) -> BaseClassifier:
     """Choose a model given the name and hyper-parameters."""
@@ -390,6 +400,8 @@ def choose_model(
 
     random_forest_classifier = RandomForestClassifier()
 
+    nn_model = NN(epochs=epochs, batch_size=batch_size, log_dir=log_dir)
+
     if name == "xgb":
         return xgb_model
     elif name == "svm":
@@ -400,6 +412,8 @@ def choose_model(
         return VotingClassifier([("xgb", xgb_model), ("svm", svm_model)], weights=model_wt)
     elif name == "forest":
         return random_forest_classifier
+    elif name == "nn":
+        return nn_model
     else:
         raise ValueError(f"Invalid model name: {name}")
 
@@ -415,6 +429,12 @@ if __name__ == "__main__":
         default="data/task3",
         help="path to the directory containing the task data",
     )
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        default="logs/task3",
+        help="path to the directory where to dump logs",
+    )
     parser.add_argument("--diagnose", action="store_true", help="enable data diagnostics")
     parser.add_argument("--smote", action="store_true", help="use SMOTE")
     parser.add_argument(
@@ -424,7 +444,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model",
-        choices=["xgb", "svm", "ensemble", "forest"],
+        choices=["xgb", "svm", "ensemble", "forest", "nn"],
         default="xgb",
         help="the choice of model to train",
     )
