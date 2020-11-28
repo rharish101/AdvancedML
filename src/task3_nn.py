@@ -17,6 +17,7 @@ from torch.nn import (
 )
 from torch.nn.utils.rnn import pad_sequence
 from torch.optim import Adam
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from typings import BaseClassifier, CSVData
@@ -42,6 +43,7 @@ class NN(BaseClassifier):
         self,
         epochs: int,
         batch_size: int,
+        log_dir: str,
         learning_rate: float = 1e-3,
         weight_decay: float = 0.0,
         balance_weights: bool = True,
@@ -52,6 +54,7 @@ class NN(BaseClassifier):
         ----------
         epochs: The max epochs to train the model
         batch_size: The batch size for training the model
+        log_dir: The directory where to save TensorBoard logs
         learning_rate: The learning rate for Adam
         weight_decay: The L2 regularization parameter for Adam (using decoupled L2)
         balance_weights: Whether to use inverse class frequency weights for the loss
@@ -59,6 +62,7 @@ class NN(BaseClassifier):
         super().__init__()
         self.epochs = epochs
         self.batch_size = batch_size
+        self.log_dir = log_dir
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.balance_weights = balance_weights
@@ -73,9 +77,6 @@ class NN(BaseClassifier):
             GRU(128, 64),
             Lambda(lambda x: x[0][-1]),  # [l, n, c] => [n, c]
             Linear(64, num_classes),
-        )
-        self.optim = Adam(
-            self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
         )
 
     def _gen_batches(
@@ -110,6 +111,7 @@ class NN(BaseClassifier):
 
         in_channels = X[0].shape[1]
         num_classes = len(class_count)
+        total_batches = np.ceil(len(X) / self.batch_size)
         self._init_model_optim(in_channels, num_classes)
 
         if self.balance_weights:
@@ -118,19 +120,27 @@ class NN(BaseClassifier):
             class_weights /= class_weights.min()
         else:
             class_weights = None
+
         loss_func = CrossEntropyLoss(class_weights)
+        optim = Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        writer = SummaryWriter(self.log_dir)
 
         self.model.train()
-        for ep in range(self.epochs):
+        for ep in range(1, self.epochs + 1):
+            running_loss = 0.0
+
             for batch_X, batch_y in tqdm(
                 self._gen_batches(X, y),
-                desc=f"Epoch {ep + 1}/{self.epochs}",
-                total=np.ceil(len(X) / self.batch_size),
+                desc=f"Epoch {ep}/{self.epochs}",
+                total=int(total_batches),
             ):
-                self.optim.zero_grad()
+                optim.zero_grad()
                 loss = loss_func(self.model(batch_X), batch_y)
+                running_loss += loss.detach().numpy()
                 loss.backward()
-                self.optim.step()
+                optim.step()
+
+            writer.add_scalar("loss", running_loss / total_batches, ep)
 
     def predict_proba(self, X: List[CSVData]) -> np.ndarray:
         """Predict the class probabilites.
