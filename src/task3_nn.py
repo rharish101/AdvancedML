@@ -117,18 +117,18 @@ class NN(BaseClassifier):
 
     def _init_model(self, num_classes: int) -> None:
         self.model = Sequential(
-            Conv1d(1, 32, 3, padding=1),
-            BatchNorm1d(32),
-            ResidualBlock(32),
-            ResidualBlock(32),
-            ResidualBlock(32),
-            ResidualBlock(32),
-            ResidualBlock(32),
+            Conv1d(1, 64, 5, padding=1),
+            BatchNorm1d(64),
+            ResidualBlock(64),
+            ResidualBlock(64),
+            ResidualBlock(64),
+            ResidualBlock(64),
+            ResidualBlock(64),
             GlobalAvgPool1d(),
-            Linear(32, 32, bias=False),
-            BatchNorm1d(32),
+            Linear(64, 64, bias=False),
+            BatchNorm1d(64),
             ReLU(),
-            Linear(32, num_classes),
+            Linear(64, num_classes),
         ).to(self.device)
 
     @staticmethod

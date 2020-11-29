@@ -1,0 +1,4 @@
+learning_rate: 0.001
+balance_weights: false
+epochs: 25
+reg_lambda: 0.001
