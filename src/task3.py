@@ -27,7 +27,6 @@ TRAINING_LABELS_CSV: Final = "y_train.csv"
 TEST_DATA_CSV: Final = "X_test.csv"
 
 TRAINING_FEAT_NPY: Final = "train-features.npy"
-TRAINING_LABELS_NPY: Final = "train-labels.npy"
 TEST_FEAT_NPY: Final = "test-features.npy"
 
 # Search distributions for hyper-parameters
@@ -70,10 +69,7 @@ SAMPLING_RATE: Final = 300.0
 
 
 class ECGModel(BaseClassifier):
-    """Model that trains on a single heartbeat, but predicts on multiple.
-
-    This is to be used with `utilities.model.finalize_model`.
-    """
+    """Wrapper that takes ECGs for models that take heartbeats."""
 
     def __init__(self, model: BaseClassifier):
         """Store the actual model."""
@@ -85,10 +81,12 @@ class ECGModel(BaseClassifier):
 
         Parameters
         ----------
-        X: The 2D input data of heart beats
+        X: The list of 2D input data where the 1st dimension is of variable length
         y: The corresponding output integer labels
         """
-        self.model.fit(X, y)
+        y_flat = np.array([yi for xi, yi in zip(X, y) for _ in range(len(xi))])
+        X_flat = np.concatenate(X, axis=0)
+        self.model.fit(X_flat, y_flat)
 
     def predict(self, X: List[CSVData]) -> np.ndarray:
         """Predict the classes by weighing class probabilites.
@@ -118,8 +116,18 @@ def __main(args: Namespace) -> None:
     if not os.path.exists(args.features_dir):
         os.makedirs(args.features_dir)
 
+    X_train = get_ecg_features(
+        os.path.join(args.data_dir, TRAINING_DATA_CSV),
+        os.path.join(args.features_dir, TRAINING_FEAT_NPY),
+    )
+
     # Read in data
-    X_train, Y_train = get_train_data(args.data_dir, args.features_dir)
+    Y_train, _ = read_csv(os.path.join(args.data_dir, TRAINING_LABELS_CSV))
+    if Y_train is None:
+        raise RuntimeError("There was a problem with reading CSV data")
+    # Remove training IDs, as they are in sorted order for training data
+    Y_train = Y_train[:, 1]
+
     if args.select_features:
         X_train = statistical_feauture_selection(X_train, args.model == "nn")
 
@@ -173,7 +181,7 @@ def __main(args: Namespace) -> None:
     config = {} if config is None else config
 
     smote_fn = get_smote_fn(**config) if args.smote else None
-    model = choose_model(args.model, args.log_dir, **config)
+    model = ECGModel(choose_model(args.model, args.log_dir, **config))
     outlier_detection = (
         get_outlier_detection(args.outlier, **config)
         if args.outlier is not None
@@ -195,7 +203,10 @@ def __main(args: Namespace) -> None:
         print(f"Micro-average F1 validation score is: {val_score:.4f}")
 
     elif args.mode == "final":
-        X_test = get_test_data(args.data_dir, args.features_dir)
+        X_test = get_ecg_features(
+            os.path.join(args.data_dir, TEST_DATA_CSV),
+            os.path.join(args.features_dir, TEST_FEAT_NPY),
+        )
         if args.select_features:
             X_test = statistical_feauture_selection(X_test, args.model == "nn")
 
@@ -203,7 +214,7 @@ def __main(args: Namespace) -> None:
         test_ids = np.arange(len(X_test))
 
         finalize_model(
-            ECGModel(model),
+            model,
             X_train,
             Y_train,
             X_test,
@@ -244,71 +255,28 @@ def statistical_feauture_selection(data: np.ndarray, time_series: bool) -> np.nd
     return data
 
 
-def get_train_data(data_dir: str, features_dir: str) -> Tuple[np.ndarray, np.ndarray]:
-    """Get training data from the raw data or the saved pre-processed data."""
-    features_path = f"{features_dir}/{TRAINING_FEAT_NPY}"
-    labels_path = f"{features_dir}/{TRAINING_LABELS_NPY}"
-
-    if os.path.exists(features_path) and os.path.exists(labels_path):
-        print("Loading pre-processed training data...")
-        X_train = np.load(features_path)
-        y_train = np.load(labels_path)
-        return X_train, y_train
-
-    # Read in data
-    X_train, _ = read_csv(f"{data_dir}/{TRAINING_DATA_CSV}")
-    Y_train, _ = read_csv(f"{data_dir}/{TRAINING_LABELS_CSV}")
-
-    if X_train is None or Y_train is None:
-        raise RuntimeError("There was a problem with reading CSV data")
-
-    # Remove training IDs, as they are in sorted order for training data
-    X_train = X_train[:, 1:]
-    Y_train = Y_train[:, 1]
-
-    ecg_features = []
-    new_labels = []
-
-    print("Pre-processing training data with biosppy...")
-    for x, y in tqdm(zip(X_train, Y_train), total=len(X_train)):
-        x = np.array([v for v in x if not np.isnan(v)])
-        beats = ecg(x, sampling_rate=SAMPLING_RATE, show=False)["templates"]
-        ecg_features.append(beats)
-        new_labels += [y] * len(beats)
-
-    ecg_features = np.concatenate(ecg_features, axis=0)
-    new_labels = np.array(new_labels)
-
-    np.save(features_path, ecg_features)
-    np.save(labels_path, new_labels)
-
-    return ecg_features, new_labels
-
-
-def get_test_data(data_dir: str, features_dir: str) -> np.ndarray:
+def get_ecg_features(data_path: str, features_path: str) -> np.ndarray:
     """Get test data from the raw data or the saved pre-processed data."""
-    features_path = f"{features_dir}/{TEST_FEAT_NPY}"
-
     if os.path.exists(features_path):
         print("Loading pre-processed test data...")
-        X_test = np.load(features_path, allow_pickle=True)
-        return X_test
+        X = np.load(features_path, allow_pickle=True)
+        return X
 
     # Read in data
-    X_test, _ = read_csv(f"{data_dir}/{TEST_DATA_CSV}")
+    X, _ = read_csv(data_path)
 
-    if X_test is None:
+    if X is None:
         raise RuntimeError("There was a problem with reading CSV data")
 
     # Remove test IDs, as they are in sorted order for test data
-    X_test = X_test[:, 1:]
+    X = X[:, 1:]
 
     ecg_features = []
 
     print("Pre-processing test data with biosppy...")
-    for x in tqdm(X_test):
-        x = np.array([v for v in x if not np.isnan(v)])
-        beats = ecg(x, sampling_rate=SAMPLING_RATE, show=False)["templates"]
+    for xi in tqdm(X):
+        xi = np.array([v for v in xi if not np.isnan(v)])
+        beats = ecg(xi, sampling_rate=SAMPLING_RATE, show=False)["templates"]
         ecg_features.append(beats)
 
     ecg_features = np.array(ecg_features, dtype=object)
@@ -357,7 +325,7 @@ def objective(
     """Get the objective function for Hyperopt."""
     try:
         smote_fn = get_smote_fn(**config) if smote else None  # type:ignore
-        model = choose_model(model, log_dir, **config)  # type:ignore
+        model = ECGModel(choose_model(model, log_dir, **config))  # type:ignore
 
         outlier_detection = (
             get_outlier_detection(outlier, **config) if outlier is not None else None  # type:ignore
