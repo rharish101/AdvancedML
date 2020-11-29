@@ -8,7 +8,7 @@ import numpy as np
 import yaml
 from biosppy.signals.ecg import ecg
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
-from imblearn.under_sampling import TomekLinks
+from imblearn.over_sampling import RandomOverSampler
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.neighbors import LocalOutlierFactor
@@ -378,7 +378,7 @@ def get_smote_fn(
     sampling_0: Optional[float] = None,
     sampling_2: Optional[float] = None,
     **kwargs,
-) -> TomekLinks:
+) -> RandomOverSampler:
     """Get a function that chooses the SMOTE model given the hyper-parameters."""
     # Hardcoding class 1 to be majority
     if sampling_0 is None or sampling_2 is None:
@@ -395,7 +395,7 @@ def get_smote_fn(
                 i: int(sampling_strategy[i] * (max(counts) - counts[i]) + counts[i])
                 for i in range(3)
             }
-        return TomekLinks(sampling_strategy=sampling_strategy_full, n_jobs=-1)
+        return RandomOverSampler(sampling_strategy=sampling_strategy_full, random_state=0)
 
     return smote_fn
 
