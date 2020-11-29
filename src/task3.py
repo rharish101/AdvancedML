@@ -395,7 +395,7 @@ def get_smote_fn(
                 i: int(sampling_strategy[i] * (max(counts) - counts[i]) + counts[i])
                 for i in range(3)
             }
-        return TomekLinks(sampling_strategy=sampling_strategy_full)
+        return TomekLinks(sampling_strategy=sampling_strategy_full, n_jobs=-1)
 
     return smote_fn
 
