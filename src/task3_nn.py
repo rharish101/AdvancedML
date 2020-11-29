@@ -66,6 +66,7 @@ class NN(BaseClassifier):
         learning_rate: float = 1e-3,
         weight_decay: float = 0.0,
         balance_weights: bool = True,
+        log_steps: int = 100,
         random_state: Optional[int] = None,
     ) -> None:
         """Store hyper-params.
@@ -78,6 +79,7 @@ class NN(BaseClassifier):
         learning_rate: The learning rate for Adam
         weight_decay: The L2 regularization parameter for Adam (using decoupled L2)
         balance_weights: Whether to use inverse class frequency weights for the loss
+        log_steps: The interval for logging into TensorBoard
         random_state: The random seed for both numpy and PyTorch
         """
         super().__init__()
@@ -87,6 +89,7 @@ class NN(BaseClassifier):
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.balance_weights = balance_weights
+        self.log_steps = log_steps
         self.random_state = random_state
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -161,11 +164,12 @@ class NN(BaseClassifier):
         np_rng = np.random.default_rng(self.random_state)
 
         self.model.train()
+        global_step = 0
         for ep in range(1, self.epochs + 1):
             running_loss = 0.0
 
-            for batch_X, batch_y in tqdm(
-                self._gen_batches(X, y, np_rng),
+            for i, (batch_X, batch_y) in tqdm(
+                enumerate(self._gen_batches(X, y, np_rng), 1),
                 desc=f"Epoch {ep}/{self.epochs}",
                 total=int(total_batches),
             ):
@@ -175,9 +179,12 @@ class NN(BaseClassifier):
                 loss.backward()
                 optim.step()
 
-            writer.add_scalar("loss", running_loss / total_batches, ep)
-            for name, param in self.model.named_parameters():
-                writer.add_histogram(name, param, ep)
+                if global_step % self.log_steps == 0:
+                    writer.add_scalar("loss", running_loss / i, global_step)
+                    for name, param in self.model.named_parameters():
+                        writer.add_histogram(name, param, global_step)
+
+                global_step += 1
 
     def predict_proba(self, X: CSVData) -> np.ndarray:
         """Predict the class probabilites.
