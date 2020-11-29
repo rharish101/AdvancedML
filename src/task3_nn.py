@@ -78,6 +78,7 @@ class NN(BaseClassifier):
         learning_rate: The learning rate for Adam
         weight_decay: The L2 regularization parameter for Adam (using decoupled L2)
         balance_weights: Whether to use inverse class frequency weights for the loss
+        random_state: The random seed for both numpy and PyTorch
         """
         super().__init__()
         self.epochs = epochs
