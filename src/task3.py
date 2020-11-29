@@ -413,6 +413,8 @@ def choose_model(
     svm_wt: float = 1.0,
     epochs: int = 50,
     batch_size: int = 64,
+    lr_step: int = 10000,
+    lr_decay: float = 0.75,
     balance_weights: bool = True,
     **kwargs,
 ) -> BaseClassifier:
@@ -443,6 +445,8 @@ def choose_model(
         epochs=epochs,
         batch_size=batch_size,
         log_dir=log_dir,
+        lr_step=lr_step,
+        lr_decay=lr_decay,
         balance_weights=balance_weights,
         random_state=0,
     )

@@ -18,6 +18,7 @@ from torch.nn import (
     Softmax,
 )
 from torch.optim import Adam
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
@@ -80,6 +81,8 @@ class NN(BaseClassifier):
         batch_size: int,
         log_dir: str,
         learning_rate: float = 1e-3,
+        lr_step: int = 10000,
+        lr_decay: float = 0.75,
         weight_decay: float = 0.0,
         balance_weights: bool = True,
         log_steps: int = 100,
@@ -103,6 +106,8 @@ class NN(BaseClassifier):
         self.batch_size = batch_size
         self.log_dir = log_dir
         self.learning_rate = learning_rate
+        self.lr_step = lr_step
+        self.lr_decay = lr_decay
         self.weight_decay = weight_decay
         self.balance_weights = balance_weights
         self.log_steps = log_steps
@@ -178,6 +183,7 @@ class NN(BaseClassifier):
 
         loss_func = CrossEntropyLoss(class_weights)
         optim = Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        scheduler = StepLR(optim, step_size=self.lr_step, gamma=self.lr_decay)
         writer = SummaryWriter(self._timestamp_dir(self.log_dir))
 
         if self.random_state is not None:
@@ -199,6 +205,7 @@ class NN(BaseClassifier):
                 running_loss += loss.detach()
                 loss.backward()
                 optim.step()
+                scheduler.step()
 
                 if global_step % self.log_steps == 0:
                     writer.add_scalar("loss", running_loss / i, global_step)
