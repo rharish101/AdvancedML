@@ -10,8 +10,8 @@ from torch.nn import (
     BatchNorm1d,
     Conv1d,
     CrossEntropyLoss,
-    Flatten,
     Linear,
+    MaxPool1d,
     Module,
     ReLU,
     Sequential,
@@ -38,7 +38,7 @@ class ResidualBlock(Module):
         * MaxPool
     """
 
-    def __init__(self, channels: int, kernel_size: int = 3):
+    def __init__(self, channels: int, kernel_size: int = 5, stride: int = 2):
         """Initialize the layers."""
         super().__init__()
         padding = (kernel_size - 1) // 2
@@ -48,11 +48,27 @@ class ResidualBlock(Module):
             ReLU(),
             Conv1d(channels, channels, kernel_size=kernel_size, bias=False, padding=padding),
         )
-        self.after = Sequential(BatchNorm1d(channels), ReLU())
+        self.after = Sequential(
+            BatchNorm1d(channels),
+            ReLU(),
+            MaxPool1d(kernel_size=kernel_size, stride=stride, padding=padding),
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         """Return the output."""
         return self.after(self.before(x) + x)
+
+
+class GlobalAvgPool1d(Module):
+    """Layer for global average pooling."""
+
+    def __init__(self):
+        """Initialize the superclass."""
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Return the output."""
+        return x.mean(dim=-1)
 
 
 class NN(BaseClassifier):
@@ -97,10 +113,15 @@ class NN(BaseClassifier):
     def _init_model(self, num_classes: int) -> None:
         self.model = Sequential(
             Conv1d(1, 32, 3, padding=1),
+            BatchNorm1d(32),
             ResidualBlock(32),
             ResidualBlock(32),
-            Flatten(),
-            Linear(32 * 180, num_classes),
+            ResidualBlock(32),
+            ResidualBlock(32),
+            ResidualBlock(32),
+            GlobalAvgPool1d(),
+            Linear(32, 32),
+            Linear(32, num_classes),
         ).to(self.device)
 
     @staticmethod
