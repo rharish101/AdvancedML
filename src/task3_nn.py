@@ -125,7 +125,9 @@ class NN(BaseClassifier):
             ResidualBlock(32),
             ResidualBlock(32),
             GlobalAvgPool1d(),
-            Linear(32, 32),
+            Linear(32, 32, bias=False),
+            BatchNorm1d(32),
+            ReLU(),
             Linear(32, num_classes),
         ).to(self.device)
 
