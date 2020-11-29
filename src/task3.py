@@ -8,7 +8,7 @@ import numpy as np
 import yaml
 from biosppy.signals.ecg import ecg
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
-from imblearn.over_sampling import ADASYN
+from imblearn.under_sampling import TomekLinks
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.neighbors import LocalOutlierFactor
@@ -20,7 +20,7 @@ from xgboost import XGBClassifier
 from task3_nn import NN
 from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
-from utilities.model import evaluate_model, finalize_model, visualize_model
+from utilities.model import SamplerFnType, evaluate_model, finalize_model, visualize_model
 
 TRAINING_DATA_CSV: Final = "X_train.csv"
 TRAINING_LABELS_CSV: Final = "y_train.csv"
@@ -76,16 +76,24 @@ class ECGModel(BaseClassifier):
         super().__init__()
         self.model = model
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
+    def fit(self, X: np.ndarray, y: np.ndarray, smote_fn: SamplerFnType = None) -> None:
         """Train the model.
 
         Parameters
         ----------
         X: The list of 2D input data where the 1st dimension is of variable length
         y: The corresponding output integer labels
+        smote_fn: The function that takes labels and returns SMOTE
         """
         y_flat = np.array([yi for xi, yi in zip(X, y) for _ in range(len(xi))])
         X_flat = np.concatenate(X, axis=0)
+
+        if smote_fn:
+            print("Resampling data...")
+            smote = smote_fn(y_flat)
+            X_flat, y_flat = smote.fit_resample(X_flat, y_flat)
+
+        print("Fitting model...")
         self.model.fit(X_flat, y_flat)
 
     def predict(self, X: List[CSVData]) -> np.ndarray:
@@ -369,9 +377,8 @@ def get_outlier_detection(
 def get_smote_fn(
     sampling_0: Optional[float] = None,
     sampling_2: Optional[float] = None,
-    k_neighbors: int = 5,
     **kwargs,
-) -> ADASYN:
+) -> TomekLinks:
     """Get a function that chooses the SMOTE model given the hyper-parameters."""
     # Hardcoding class 1 to be majority
     if sampling_0 is None or sampling_2 is None:
@@ -388,9 +395,7 @@ def get_smote_fn(
                 i: int(sampling_strategy[i] * (max(counts) - counts[i]) + counts[i])
                 for i in range(3)
             }
-        return ADASYN(
-            sampling_strategy=sampling_strategy_full, n_neighbors=k_neighbors, random_state=0
-        )
+        return TomekLinks(sampling_strategy=sampling_strategy_full)
 
     return smote_fn
 
