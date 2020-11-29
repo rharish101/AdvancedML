@@ -6,7 +6,7 @@ from warnings import warn
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from imblearn.over_sampling.base import BaseOverSampler
+from imblearn.base import BaseSampler
 from sklearn.base import BaseEstimator
 from sklearn.feature_selection import RFECV
 from sklearn.metrics import (
@@ -25,6 +25,8 @@ from sklearn.utils.random import sample_without_replacement
 
 from typings import BaseRegressor, CSVData
 from utilities.data import create_submission_file
+
+SamplerFnType = Optional[Callable[[CSVData], BaseSampler]]
 
 
 def evaluate_model_balanced_ensemble(
@@ -95,7 +97,7 @@ def evaluate_model(
     X_train: CSVData,
     Y_train: CSVData,
     k: int,
-    smote_fn: Optional[Callable[[CSVData], BaseOverSampler]] = None,
+    smote_fn: SamplerFnType = None,
     outlier_detection: Any = None,
     single: bool = False,
 ) -> Tuple[float, float]:
@@ -128,12 +130,8 @@ def evaluate_model(
             X_train_cv = X_train_cv[outliers == 1]
             Y_train_cv = Y_train_cv[outliers == 1]
 
-        if smote_fn:
-            smote = smote_fn(Y_train_cv)
-            X_train_cv, Y_train_cv = smote.fit_resample(X_train_cv, Y_train_cv)
-
         try:
-            model.fit(X_train_cv, Y_train_cv)
+            model.fit(X_train_cv, Y_train_cv, smote_fn=smote_fn)
         except KeyboardInterrupt:
             pass
 
@@ -156,7 +154,7 @@ def finalize_model(
     X_test: CSVData,
     test_ids: CSVData,
     output: str,
-    smote_fn: Optional[Callable[[CSVData], BaseOverSampler]] = None,
+    smote_fn: SamplerFnType = None,
     outlier_detection: Any = None,
 ) -> None:
     """Train the model on the complete data and generate the submission file.
@@ -178,11 +176,7 @@ def finalize_model(
         X_train = X_train[outliers == 1]
         Y_train = Y_train[outliers == 1]
 
-    if smote_fn:
-        smote = smote_fn(Y_train)
-        X_train, Y_train = smote.fit_resample(X_train, Y_train)
-
-    model.fit(X_train, Y_train)
+    model.fit(X_train, Y_train, smote_fn=smote_fn)
 
     print("Model trained")
     Y_pred = model.predict(X_test)
