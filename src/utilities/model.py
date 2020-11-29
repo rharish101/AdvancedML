@@ -132,7 +132,10 @@ def evaluate_model(
             smote = smote_fn(Y_train_cv)
             X_train_cv, Y_train_cv = smote.fit_resample(X_train_cv, Y_train_cv)
 
-        model.fit(X_train_cv, Y_train_cv)
+        try:
+            model.fit(X_train_cv, Y_train_cv)
+        except KeyboardInterrupt:
+            pass
 
         train_pred = model.predict(X_train_cv)
         train_score += f1_score(Y_train_cv, train_pred, average="micro")
