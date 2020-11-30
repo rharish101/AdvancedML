@@ -5,7 +5,6 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
-import pandas as pd
 import yaml
 from biosppy.signals.ecg import ecg
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
@@ -16,8 +15,6 @@ from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClas
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import SVC
 from tqdm import tqdm
-from typing_extensions import Final
-from xgboost import XGBClassifier
 from tsfresh.feature_extraction.feature_calculators import (
     absolute_sum_of_changes,
     change_quantiles,
@@ -27,9 +24,18 @@ from tsfresh.feature_extraction.feature_calculators import (
     variance,
     variation_coefficient,
 )
+from typing_extensions import Final
+from xgboost import XGBClassifier
+
 from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
-from utilities.model import evaluate_model, finalize_model, visualize_model, read_selected_features, feature_selection
+from utilities.model import (
+    evaluate_model,
+    feature_selection,
+    finalize_model,
+    read_selected_features,
+    visualize_model,
+)
 
 TASK_DATA_DIRECTORY: Final[str] = "data/task3"
 TRAINING_DATA_NAME: Final[str] = "X_train.csv"
@@ -243,19 +249,19 @@ def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
         vvariation_coefficient = variation_coefficient(x[:, -1])
 
         new_tsfresh = np.array(
-                        [
-                            vchange_quantiles_abs,
-                            vchange_quantiles,
-                            vfft_aggregated_k,
-                            vmean_abs_change,
-                            vabsolute_sum_of_changes,
-                            vcid_ce,
-                            vfft_aggregated_s,
-                            vfft_aggregated_c,
-                            vvariance,
-                            vvariation_coefficient,
-                        ]
-                    )
+            [
+                vchange_quantiles_abs,
+                vchange_quantiles,
+                vfft_aggregated_k,
+                vmean_abs_change,
+                vabsolute_sum_of_changes,
+                vcid_ce,
+                vfft_aggregated_s,
+                vfft_aggregated_c,
+                vvariance,
+                vvariation_coefficient,
+            ]
+        )
 
         ecg_features = (
             np.vstack(
@@ -468,6 +474,11 @@ if __name__ == "__main__":
         help="where the test features are stored or should be stored",
     )
     parser.add_argument(
+        "--select-features",
+        action="store_true",
+        help="whether to train the most optimal features",
+    )
+    parser.add_argument(
         "--selected-features-path",
         type=str,
         default="config/features-task3.txt",
@@ -505,11 +516,6 @@ if __name__ == "__main__":
         type=str,
         default="dist/submission3.csv",
         help="the path by which to save the output CSV",
-    )
-    final_parser.add_argument(
-        "--select-features",
-        action="store_true",
-        help="whether to train the most optimal features",
     )
     parser.add_argument("--visual", action="store_true", help="enable model visualizations")
 
