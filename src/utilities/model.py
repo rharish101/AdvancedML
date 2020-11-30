@@ -21,6 +21,7 @@ from sklearn.metrics import (
     roc_curve,
 )
 from sklearn.model_selection import StratifiedKFold
+from sklearn.utils.multiclass import unique_labels
 from sklearn.utils.random import sample_without_replacement
 
 from typings import BaseRegressor, CSVData
@@ -100,6 +101,7 @@ def evaluate_model(
     smote_fn: SamplerFnType = None,
     outlier_detection: Any = None,
     single: bool = False,
+    visualize: bool = False,
 ) -> Tuple[float, float]:
     """Perform cross-validation on the given dataset and return the R^2 score.
 
@@ -121,7 +123,7 @@ def evaluate_model(
     val_score = 0
     kf = StratifiedKFold(n_splits=k, shuffle=True, random_state=0)
 
-    for train_index, test_index in kf.split(X_train, Y_train):
+    for fold_index, (train_index, test_index) in enumerate(kf.split(X_train, Y_train)):
         X_train_cv, X_test_cv = X_train[train_index], X_train[test_index]
         Y_train_cv, Y_test_cv = Y_train[train_index], Y_train[test_index]
 
@@ -140,6 +142,15 @@ def evaluate_model(
 
         test_pred = model.predict(X_test_cv)
         val_score += f1_score(Y_test_cv, test_pred, average="micro")
+
+        if visualize:
+            print(f"\nComputing training statistics for fold {fold_index + 1}/{k} ...")
+            create_visualization(model, X_train_cv, Y_train_cv, "Training Metrics")
+
+            print(f"\nComputing validation statistics for fold {fold_index + 1}/{k} ...")
+            create_visualization(model, X_test_cv, Y_test_cv, "Validation Metrics")
+
+            plt.show()
 
         if single:
             return train_score, val_score
@@ -317,8 +328,8 @@ def select_features_correlation(
     return preserve
 
 
-def visualize_model(model, X_test, Y_test):
-    """Visualize metrics of a model.
+def create_visualization(model, X_test, Y_test, title="Model Metrics"):
+    """Compute the metrics and creates the figures used for model visualization.
 
     Parameters
     ----------
@@ -327,6 +338,8 @@ def visualize_model(model, X_test, Y_test):
     X_test: Data used to evaluate the model
 
     Y_test: Data labels for the evaluation data
+
+    title: Title of the figure on which visualizations will be drawn
     """
     try:
         Y_probabilities = model.predict_proba(X_test)
@@ -334,13 +347,15 @@ def visualize_model(model, X_test, Y_test):
         # Must be an SVM w/o probability=True
         Y_probabilities = model.decision_function(X_test)
 
-    _, axes = plt.subplots(ncols=3, figsize=(16, 5))
+    figure, axes = plt.subplots(ncols=3, figsize=(16, 5))
+    figure.suptitle(title)
 
     # Plot confusion matrix
-    plot_confusion_matrix(model, X_test, Y_test, ax=axes[0], normalize="true")
+    labels = unique_labels(Y_test)
+    plot_confusion_matrix(model, X_test, Y_test, ax=axes[0], normalize="true", labels=labels)
 
     # Plot precision-recall and ROC curve for each class
-    for index, class_label in enumerate(model.classes_):
+    for index, class_label in enumerate(labels):
         # Plot precision-recall curve
         precision, recall, _ = precision_recall_curve(
             Y_test, Y_probabilities[:, index], pos_label=class_label
@@ -369,4 +384,19 @@ def visualize_model(model, X_test, Y_test):
             f"fscore: {fscore:0.4f}, support: {support}",
         )
 
+
+def visualize_model(model, X_test, Y_test):
+    """Visualize metrics of a model.
+
+    Parameters
+    ----------
+    model: The trained model to get the metrics from
+
+    X_test: Data used to evaluate the model
+
+    Y_test: Data labels for the evaluation data
+
+    plot: Matplotlib plot used to visualize the data. A new one will be created if None is given.
+    """
+    create_visualization(model, X_test, Y_test)
     plt.show()

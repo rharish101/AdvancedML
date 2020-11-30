@@ -134,7 +134,7 @@ class NN(BaseClassifier):
     @staticmethod
     def _timestamp_dir(base_dir: str) -> str:
         """Add a time-stamped directory after the base directory."""
-        return os.path.join(base_dir, datetime.now().isoformat())
+        return os.path.join(base_dir, datetime.now().isoformat().replace(":", ""))
 
     def _gen_batches(
         self,

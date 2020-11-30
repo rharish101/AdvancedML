@@ -9,12 +9,12 @@
       "request": "launch",
       "console": "integratedTerminal",
       "stopOnEntry": false,
-      "pythonPath": "${command:python.interpreterPath}",
+      "python": "${command:python.interpreterPath}",
       "program": "${file}",
       "cwd": "${workspaceRoot}",
       "env": {},
       "envFile": "${workspaceRoot}/.env",
       "justMyCode": false,
-      "args": ["--visual", "final"]
+      "args": ["--model", "nn", "--visual", "eval"]
   }],
 }

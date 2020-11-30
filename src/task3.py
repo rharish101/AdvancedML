@@ -218,6 +218,7 @@ def __main(args: Namespace) -> None:
             smote_fn=smote_fn,
             outlier_detection=outlier_detection,
             single=args.single,
+            visualize=args.visual,
         )
 
         print(f"Micro-average F1 training score is: {train_score:.4f}")
