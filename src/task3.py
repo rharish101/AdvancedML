@@ -96,8 +96,8 @@ class ECGModel(BaseClassifier):
         print("Fitting model...")
         self.model.fit(X_flat, y_flat)
 
-    def predict(self, X: List[CSVData]) -> np.ndarray:
-        """Predict the classes by weighing class probabilites.
+    def predict_proba(self, X: List[CSVData]) -> np.ndarray:
+        """Predict the class probabilities by weighing class probabilites.
 
         Parameters
         ----------
@@ -117,7 +117,20 @@ class ECGModel(BaseClassifier):
                 probabilities = self.model.decision_function(xi)
             pred.append(probabilities.mean(axis=0))
 
-        return np.array(pred).argmax(axis=1)
+        return np.array(pred)
+
+    def predict(self, X: List[CSVData]) -> np.ndarray:
+        """Predict the classes by weighing class probabilites.
+
+        Parameters
+        ----------
+        X: The list of 2D input data where the 1st dimension is of variable length
+
+        Returns
+        -------
+        The 1D array of class predictions
+        """
+        return self.predict_proba(X).argmax(axis=1)
 
 
 def __main(args: Namespace) -> None:
