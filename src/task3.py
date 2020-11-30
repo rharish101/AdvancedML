@@ -194,7 +194,7 @@ def __main(args: Namespace) -> None:
 
 def get_ecg_features(raw_path: str, transformed_path: str) -> np.ndarray:
     """Get ECG features from the raw data or the saved transformed data."""
-    if False and os.path.exists(transformed_path):
+    if os.path.exists(transformed_path):
         print("Loading features from %s..." % transformed_path)
         return np.load(transformed_path)
 
