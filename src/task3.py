@@ -5,6 +5,7 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import pandas as pd
 import yaml
 from biosppy.signals.ecg import ecg
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
@@ -16,13 +17,14 @@ from sklearn.feature_selection import VarianceThreshold
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import SVC
 from tqdm import tqdm
+from tsfresh import extract_features
 from typing_extensions import Final
 from xgboost import XGBClassifier
 
 from task3_nn import NN
 from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
-from utilities.model import evaluate_model, finalize_model, read_selected_features, visualize_model
+from utilities.model import evaluate_model, finalize_model, visualize_model
 
 TASK_DATA_DIRECTORY: Final[str] = "data/task3"
 TRAINING_DATA_NAME: Final[str] = "X_train.csv"
@@ -83,9 +85,8 @@ def __main(args: Namespace) -> None:
         f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features, args.model == "nn"
     )
 
-    selected = read_selected_features(args.selected_features_path, X_train.shape[1])
-    X_train = X_train[:, selected]
-    print("Done")
+    # selected = read_selected_features(args.selected_features_path, X_train.shape[1])
+    # X_train = X_train[:, selected]
 
     if args.select_features:
         X_train = statistical_feauture_selection(X_train, args.model == "nn")
@@ -168,7 +169,7 @@ def __main(args: Namespace) -> None:
         if args.select_features:
             X_test = statistical_feauture_selection(X_test, args.model == "nn")
 
-        X_test = X_test[:, selected]
+        # X_test = X_test[:, selected]
 
         # Assuming test IDs as in ascending order
         test_ids = np.arange(len(X_test))
@@ -227,7 +228,9 @@ def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) 
             # If the model is an NN, we want the raw transformed signal
             return ecg_features
 
-        return extract_statistics(ecg_features)
+        return np.hstack(
+            (extract_statistics(ecg_features), extract_heartrate_tsfresh(ecg_features))
+        )
     else:
         raw_data, _ = read_csv(raw_path)
 
@@ -257,7 +260,27 @@ def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) 
             # If the model is an NN, we want the raw transformed signal
             return ecg_features
         else:
-            return extract_statistics(ecg_features)
+            return np.hstack(
+                (extract_statistics(ecg_features), extract_heartrate_tsfresh(ecg_features))
+            )
+
+
+def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
+    """Extract all tsfresh features from heart rate."""
+    ecg_features = None
+
+    print("Extracting TSFRESH statistics from heart rate signals...")
+
+    i = 0
+    for x in tqdm(transformed):
+        time = np.arange(x[:, -1].shape[0]).reshape(-1, 1)
+        ids = np.repeat(i, x[:, -1].shape[0]).reshape(-1, 1)
+        stacked = np.hstack((time, ids, x[:, -1].reshape(-1, 1)))
+        ecg_features = np.vstack((ecg_features, stacked)) if ecg_features is not None else stacked
+        i += 1
+
+    dataframe = pd.DataFrame(data=ecg_features, columns=["time", "id", "signal"])
+    return extract_features(dataframe, column_id="id", column_sort="time")
 
 
 def extract_statistics(transformed: np.ndarray) -> np.ndarray:
@@ -427,7 +450,7 @@ def choose_model(
         random_state=0,
     )
 
-    xgb_model = XGBClassifier(random_state=0)
+    # xgb_model = XGBClassifier(random_state=0)
 
     svm_model = SVC(C=C, class_weight="balanced", random_state=0)
 
