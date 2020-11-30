@@ -13,17 +13,23 @@ from imblearn.over_sampling import ADASYN
 from scipy.fft import fft
 from scipy.stats import median_abs_deviation
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
-from sklearn.feature_selection import VarianceThreshold
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import SVC
 from tqdm import tqdm
-from tsfresh import extract_features
 from typing_extensions import Final
 from xgboost import XGBClassifier
-
+from tsfresh.feature_extraction.feature_calculators import (
+    absolute_sum_of_changes,
+    change_quantiles,
+    cid_ce,
+    fft_aggregated,
+    mean_abs_change,
+    variance,
+    variation_coefficient,
+)
 from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
-from utilities.model import evaluate_model, finalize_model, visualize_model
+from utilities.model import evaluate_model, finalize_model, visualize_model, read_selected_features, feature_selection
 
 TASK_DATA_DIRECTORY: Final[str] = "data/task3"
 TRAINING_DATA_NAME: Final[str] = "X_train.csv"
@@ -79,8 +85,9 @@ def __main(args: Namespace) -> None:
 
     X_train = get_ecg_features(f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features)
 
-    if args.select_features:
-        X_train = statistical_feature_selection(X_train)
+    if not args.select_features:
+        selected = read_selected_features(args.selected_features_path, X_train.shape[1])
+        X_train = X_train[:, selected]
 
     if args.mode == "tune":
         print("Starting hyper-parameter tuning")
@@ -155,10 +162,10 @@ def __main(args: Namespace) -> None:
     elif args.mode == "final":
         X_test = get_ecg_features(f"{args.data_dir}/{TEST_DATA_PATH}", args.test_features)
 
-        if args.select_features:
-            X_test = statistical_feature_selection(X_test)
+        if args.feature_selection:
+            selected = feature_selection(model, X_train, Y_train, args.selected_features_path)
 
-        # X_test = X_test[:, selected]
+        X_test = X_test[:, selected]
 
         # Assuming test IDs as in ascending order
         test_ids = np.arange(len(X_test))
@@ -179,12 +186,6 @@ def __main(args: Namespace) -> None:
 
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
-
-
-def statistical_feature_selection(data: np.ndarray) -> np.ndarray:
-    """Do simple feature selection based on statistical characteristics of data."""
-    vt = VarianceThreshold()
-    return vt.fit_transform(data)
 
 
 def get_ecg_features(raw_path: str, transformed_path: str) -> np.ndarray:
@@ -232,14 +233,46 @@ def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
     print("Extracting TSFRESH statistics from heart rate signals...")
 
     i = 0
-    for i, x in tqdm(enumerate(transformed), total=len(transformed)):
-        time = np.arange(x[:, -1].shape[0]).reshape(-1, 1)
-        ids = np.repeat(i, x[:, -1].shape[0]).reshape(-1, 1)
-        stacked = np.hstack((time, ids, x[:, -1].reshape(-1, 1)))
-        ecg_features = np.vstack((ecg_features, stacked)) if ecg_features is not None else stacked
+    for x in tqdm(transformed):
+        vchange_quantiles_abs = change_quantiles(x[:, -1], 0, 0.8, True, "var")
+        vchange_quantiles = change_quantiles(x[:, -1], 0, 0.8, False, "var")
+        vfft_aggregated_k = list(fft_aggregated(x[:, -1], [{"aggtype": "kurtosis"}]))[0][1]
+        vmean_abs_change = mean_abs_change(x[:, -1])
+        vabsolute_sum_of_changes = absolute_sum_of_changes(x[:, -1])
+        vcid_ce = cid_ce(x[:, -1], normalize=False)
+        vfft_aggregated_s = list(fft_aggregated(x[:, -1], [{"aggtype": "skew"}]))[0][1]
+        vfft_aggregated_c = list(fft_aggregated(x[:, -1], [{"aggtype": "centroid"}]))[0][1]
+        vvariance = variance(x[:, -1])
+        vvariation_coefficient = variation_coefficient(x[:, -1])
 
-    dataframe = pd.DataFrame(data=ecg_features, columns=["time", "id", "signal"])
-    return np.array(extract_features(dataframe, column_id="id", column_sort="time"))
+        new_tsfresh = np.array(
+                        [
+                            vchange_quantiles_abs,
+                            vchange_quantiles,
+                            vfft_aggregated_k,
+                            vmean_abs_change,
+                            vabsolute_sum_of_changes,
+                            vcid_ce,
+                            vfft_aggregated_s,
+                            vfft_aggregated_c,
+                            vvariance,
+                            vvariation_coefficient,
+                        ]
+                    )
+
+        ecg_features = (
+            np.vstack(
+                (
+                    ecg_features,
+                    new_tsfresh,
+                )
+            )
+            if ecg_features is not None
+            else new_tsfresh
+        )
+        i += 1
+
+    return ecg_features
 
 
 def extract_statistics(transformed: np.ndarray) -> np.ndarray:
@@ -478,11 +511,6 @@ if __name__ == "__main__":
         default="config/features-task3.txt",
         help="where the most optimal features are stored",
     )
-    parser.add_argument(
-        "--select-features",
-        action="store_true",
-        help="whether to train the most optimal features",
-    )
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
 
     # Sub-parser for k-fold cross-validation
@@ -515,6 +543,11 @@ if __name__ == "__main__":
         type=str,
         default="dist/submission3.csv",
         help="the path by which to save the output CSV",
+    )
+    final_parser.add_argument(
+        "--select-features",
+        action="store_true",
+        help="whether to train the most optimal features",
     )
     parser.add_argument("--visual", action="store_true", help="enable model visualizations")
 
