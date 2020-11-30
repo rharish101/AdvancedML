@@ -21,7 +21,6 @@ from tsfresh import extract_features
 from typing_extensions import Final
 from xgboost import XGBClassifier
 
-from task3_nn import NN
 from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
 from utilities.model import evaluate_model, finalize_model, visualize_model
@@ -72,27 +71,16 @@ SAMPLING_RATE: Final = 300.0
 
 def __main(args: Namespace) -> None:
     # Read in data
-
     Y_train, _ = read_csv(f"{args.data_dir}/{TRAINING_LABELS_NAME}")
-
     if Y_train is None:
         raise RuntimeError("There was a problem with reading CSV data")
-
     # Remove training IDs, as they are in sorted order for training data
     Y_train = Y_train[:, 1]
 
-    X_train = get_ecg_features(
-        f"{args.data_dir}/{TRAINING_DATA_NAME}",
-        args.train_features,
-        "tsfresh_heartbeat",
-        args.model == "nn",
-    )
-
-    # selected = read_selected_features(args.selected_features_path, X_train.shape[1])
-    # X_train = X_train[:, selected]
+    X_train = get_ecg_features(f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features)
 
     if args.select_features:
-        X_train = statistical_feauture_selection(X_train, args.model == "nn")
+        X_train = statistical_feature_selection(X_train)
 
     if args.mode == "tune":
         print("Starting hyper-parameter tuning")
@@ -165,15 +153,10 @@ def __main(args: Namespace) -> None:
         print(f"Micro-average F1 score is: {score:.4f}")
 
     elif args.mode == "final":
-        X_test = get_ecg_features(
-            f"{args.data_dir}/{TEST_DATA_PATH}",
-            args.test_features,
-            "tsfresh_heartbeat",
-            args.model == "nn",
-        )
+        X_test = get_ecg_features(f"{args.data_dir}/{TEST_DATA_PATH}", args.test_features)
 
         if args.select_features:
-            X_test = statistical_feauture_selection(X_test, args.model == "nn")
+            X_test = statistical_feature_selection(X_test)
 
         # X_test = X_test[:, selected]
 
@@ -198,120 +181,70 @@ def __main(args: Namespace) -> None:
         raise ValueError(f"Invalid mode: {args.mode}")
 
 
-def statistical_feauture_selection(data: np.ndarray, time_series: bool) -> np.ndarray:
+def statistical_feature_selection(data: np.ndarray) -> np.ndarray:
     """Do simple feature selection based on statistical characteristics of data."""
     vt = VarianceThreshold()
-
-    if time_series:
-        shapes = [x.shape[0] for x in data]
-        data = [x for y in data for x in y]
-
-    data = vt.fit_transform(data)
-
-    if time_series:
-        X_train_new = []
-
-        i = 0
-        for shape in shapes:
-            j = i
-            i += shape
-            X_train_new.append(data[j:i])
-
-        data = np.array(X_train_new, dtype=object)
-
-    return data
+    return vt.fit_transform(data)
 
 
-def get_ecg_features(
-    raw_path: str, transformed_path: str, tsfresh_path: str, stats: bool = False
-) -> np.ndarray:
+def get_ecg_features(raw_path: str, transformed_path: str) -> np.ndarray:
     """Get ECG features from the raw data or the saved transformed data."""
-    ecg_features = []
-
     if os.path.exists(transformed_path):
         print("Loading features from %s..." % transformed_path)
-        ecg_features = np.load(transformed_path, allow_pickle=True)
+        return np.load(transformed_path)
 
-        if stats:
-            # If the model is an NN, we want the raw transformed signal
-            return ecg_features
+    raw_data, _ = read_csv(raw_path)
+    if raw_data is None:
+        raise RuntimeError("There was a problem with reading CSV data")
+    # Remove the IDs
+    raw_data = raw_data[:, 1:]
 
-        return np.hstack(
-            (
-                extract_statistics(ecg_features),
-                extract_heartrate_tsfresh(ecg_features, tsfresh_path),
-            )
+    ecg_features = []
+    print("Transforming signal with biosppy...")
+
+    for x in tqdm(raw_data):
+        x = np.array([i for i in x if not np.isnan(i)])
+        extracted = ecg(x, sampling_rate=SAMPLING_RATE, show=False)
+        beats = fft(extracted["templates"])
+
+        # We don't use the given heart rate as it applies physiological limits
+        # (40 <= heart rate <= 200), and thus this may be empty. We also don't care about
+        # smoothing it, as we're using median and MAD anyway.
+        heart_rate = SAMPLING_RATE * (60.0 / np.diff(extracted["rpeaks"]))
+        # Duplicate last element so that heart_rate and beats are of same length
+        heart_rate = np.append(heart_rate, heart_rate[-1]).reshape(-1, 1)
+        ecg_features.append(np.hstack((np.real(beats), np.imag(beats), heart_rate)))
+
+    final_features = np.hstack(
+        (
+            extract_statistics(ecg_features),
+            extract_heartrate_tsfresh(ecg_features),
         )
-    else:
-        raw_data, _ = read_csv(raw_path)
+    )
 
-        if raw_data is None:
-            raise RuntimeError("There was a problem with reading CSV data")
-
-        raw_data = raw_data[:, 1:]
-
-        print("Transforming signal with biosppy...")
-
-        for x in tqdm(raw_data):
-            x = np.array([i for i in x if not np.isnan(i)])
-            extracted = ecg(x, sampling_rate=SAMPLING_RATE, show=False)
-            if len(extracted["rpeaks"]) <= 1:
-                continue
-
-            beats = fft(extracted["templates"])
-
-            # We don't use the given heart rate as it applies physiological limits
-            # (40 <= heart rate <= 200), and thus this may be empty. We also don't care about
-            # smoothing it, as we're using median and MAD anyway.
-            heart_rate = SAMPLING_RATE * (60.0 / np.diff(extracted["rpeaks"]))
-            # Duplicate last element so that heart_rate and beats are of same length
-            heart_rate = np.append(heart_rate, heart_rate[-1]).reshape(-1, 1)
-            ecg_features.append(np.hstack((np.real(beats), np.imag(beats), heart_rate)))
-
-        np.save(transformed_path, ecg_features)
-
-        if stats:
-            # If the model is an NN, we want the raw transformed signal
-            return ecg_features
-        else:
-            return np.hstack(
-                (
-                    extract_statistics(ecg_features),
-                    extract_heartrate_tsfresh(ecg_features, tsfresh_path),
-                )
-            )
+    np.save(transformed_path, final_features)
+    return final_features
 
 
-def extract_heartrate_tsfresh(transformed: np.ndarray, tsfresh_path: str) -> np.ndarray:
+def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
     """Extract all tsfresh features from heart rate."""
-    if os.path.exists(tsfresh_path):
-        print("Loading tsfresh stats from %s..." % tsfresh_path)
-        return np.load(tsfresh_path, allow_pickle=True)
-
     ecg_features = None
-
     print("Extracting TSFRESH statistics from heart rate signals...")
 
     i = 0
-    for x in tqdm(transformed):
+    for i, x in tqdm(enumerate(transformed), total=len(transformed)):
         time = np.arange(x[:, -1].shape[0]).reshape(-1, 1)
         ids = np.repeat(i, x[:, -1].shape[0]).reshape(-1, 1)
         stacked = np.hstack((time, ids, x[:, -1].reshape(-1, 1)))
         ecg_features = np.vstack((ecg_features, stacked)) if ecg_features is not None else stacked
-        i += 1
 
     dataframe = pd.DataFrame(data=ecg_features, columns=["time", "id", "signal"])
-    extracted_features = np.array(extract_features(dataframe, column_id="id", column_sort="time"))
-
-    np.save(tsfresh_path, extracted_features)
-
-    return extracted_features
+    return np.array(extract_features(dataframe, column_id="id", column_sort="time"))
 
 
 def extract_statistics(transformed: np.ndarray) -> np.ndarray:
     """Extract median and deviation statistics from the transformed ECG signals."""
     ecg_features = []
-
     print("Extracting statistics from transformed signals...")
 
     for x in tqdm(transformed):
@@ -474,16 +407,8 @@ def choose_model(
         reg_lambda=reg_lambda,
         random_state=0,
     )
-
-    # xgb_model = XGBClassifier(random_state=0)
-
     svm_model = SVC(C=C, class_weight="balanced", random_state=0)
-
     random_forest_classifier = RandomForestClassifier()
-
-    nn_model = NN(
-        epochs=epochs, batch_size=batch_size, log_dir=log_dir, balance_weights=balance_weights
-    )
 
     if name == "xgb":
         return xgb_model
@@ -495,8 +420,6 @@ def choose_model(
         return VotingClassifier([("xgb", xgb_model), ("svm", svm_model)], weights=model_wt)
     elif name == "forest":
         return random_forest_classifier
-    elif name == "nn":
-        return nn_model
     else:
         raise ValueError(f"Invalid model name: {name}")
 
@@ -527,7 +450,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model",
-        choices=["xgb", "svm", "ensemble", "forest", "nn"],
+        choices=["xgb", "svm", "ensemble", "forest"],
         default="xgb",
         help="the choice of model to train",
     )
