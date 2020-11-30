@@ -82,7 +82,10 @@ def __main(args: Namespace) -> None:
     Y_train = Y_train[:, 1]
 
     X_train = get_ecg_features(
-        f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features, args.model == "nn"
+        f"{args.data_dir}/{TRAINING_DATA_NAME}",
+        args.train_features,
+        "tsfresh_heartbeat",
+        args.model == "nn",
     )
 
     # selected = read_selected_features(args.selected_features_path, X_train.shape[1])
@@ -163,7 +166,10 @@ def __main(args: Namespace) -> None:
 
     elif args.mode == "final":
         X_test = get_ecg_features(
-            f"{args.data_dir}/{TEST_DATA_PATH}", args.test_features, args.model == "nn"
+            f"{args.data_dir}/{TEST_DATA_PATH}",
+            args.test_features,
+            "tsfresh_heartbeat",
+            args.model == "nn",
         )
 
         if args.select_features:
@@ -216,7 +222,9 @@ def statistical_feauture_selection(data: np.ndarray, time_series: bool) -> np.nd
     return data
 
 
-def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) -> np.ndarray:
+def get_ecg_features(
+    raw_path: str, transformed_path: str, tsfresh_path: str, stats: bool = False
+) -> np.ndarray:
     """Get ECG features from the raw data or the saved transformed data."""
     ecg_features = []
 
@@ -229,7 +237,10 @@ def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) 
             return ecg_features
 
         return np.hstack(
-            (extract_statistics(ecg_features), extract_heartrate_tsfresh(ecg_features))
+            (
+                extract_statistics(ecg_features),
+                extract_heartrate_tsfresh(ecg_features, tsfresh_path),
+            )
         )
     else:
         raw_data, _ = read_csv(raw_path)
@@ -256,17 +267,26 @@ def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) 
             heart_rate = np.append(heart_rate, heart_rate[-1]).reshape(-1, 1)
             ecg_features.append(np.hstack((np.real(beats), np.imag(beats), heart_rate)))
 
+        np.save(transformed_path, ecg_features)
+
         if stats:
             # If the model is an NN, we want the raw transformed signal
             return ecg_features
         else:
             return np.hstack(
-                (extract_statistics(ecg_features), extract_heartrate_tsfresh(ecg_features))
+                (
+                    extract_statistics(ecg_features),
+                    extract_heartrate_tsfresh(ecg_features, tsfresh_path),
+                )
             )
 
 
-def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
+def extract_heartrate_tsfresh(transformed: np.ndarray, tsfresh_path: str) -> np.ndarray:
     """Extract all tsfresh features from heart rate."""
+    if os.path.exists(tsfresh_path):
+        print("Loading tsfresh stats from %s..." % tsfresh_path)
+        return np.load(tsfresh_path, allow_pickle=True)
+
     ecg_features = None
 
     print("Extracting TSFRESH statistics from heart rate signals...")
@@ -280,7 +300,11 @@ def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
         i += 1
 
     dataframe = pd.DataFrame(data=ecg_features, columns=["time", "id", "signal"])
-    return extract_features(dataframe, column_id="id", column_sort="time")
+    extracted_features = np.array(extract_features(dataframe, column_id="id", column_sort="time"))
+
+    np.save(tsfresh_path, extracted_features)
+
+    return extracted_features
 
 
 def extract_statistics(transformed: np.ndarray) -> np.ndarray:
