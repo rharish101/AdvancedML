@@ -80,11 +80,12 @@ def __main(args: Namespace) -> None:
     Y_train = Y_train[:, 1]
 
     X_train = get_ecg_features(
-        f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features, Y_train, args.model == "nn"
+        f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features, args.model == "nn"
     )
 
     selected = read_selected_features(args.selected_features_path, X_train.shape[1])
     X_train = X_train[:, selected]
+    print("Done")
 
     if args.select_features:
         X_train = statistical_feauture_selection(X_train, args.model == "nn")
@@ -214,9 +215,7 @@ def statistical_feauture_selection(data: np.ndarray, time_series: bool) -> np.nd
     return data
 
 
-def get_ecg_features(
-    raw_path: str, transformed_path: str, y: np.ndarray, stats: bool = False
-) -> np.ndarray:
+def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) -> np.ndarray:
     """Get ECG features from the raw data or the saved transformed data."""
     ecg_features = []
 
@@ -228,7 +227,7 @@ def get_ecg_features(
             # If the model is an NN, we want the raw transformed signal
             return ecg_features
 
-        return extract_statistics(ecg_features, y)
+        return extract_statistics(ecg_features)
     else:
         raw_data, _ = read_csv(raw_path)
 
@@ -258,10 +257,10 @@ def get_ecg_features(
             # If the model is an NN, we want the raw transformed signal
             return ecg_features
         else:
-            return extract_statistics(ecg_features, y)
+            return extract_statistics(ecg_features)
 
 
-def extract_statistics(transformed: np.ndarray, y: np.ndarray) -> np.ndarray:
+def extract_statistics(transformed: np.ndarray) -> np.ndarray:
     """Extract median and deviation statistics from the transformed ECG signals."""
     ecg_features = []
 
