@@ -2,7 +2,7 @@
 """The entry point for the scripts for Task 3."""
 import os
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -40,9 +40,6 @@ XGB_SPACE: Final = {
     "subsample": hp.uniform("subsample", 0.8, 1),
     "colsample_bytree": hp.quniform("colsample_bytree", 0.5, 1.0, 0.05),
     "reg_lambda": hp.lognormal("reg_lambda", 1.0, 1.0),
-    "focus": hp.lognormal("focus", 1.0, 1.0),
-    "alpha_1": hp.lognormal("alpha_1", 1.0, 1.0),
-    "alpha_2": hp.lognormal("alpha_2", 1.0, 1.0),
 }
 SVM_SPACE: Final = {"C": hp.lognormal("C", 1.0, 1.0)}
 ENSEMBLE_SPACE: Final = {
@@ -260,35 +257,6 @@ def extract_statistics(transformed: np.ndarray) -> np.ndarray:
     return np.array(ecg_features)
 
 
-def __loss(
-    y_true: np.ndarray, y_pred: np.ndarray, focus: float, weights: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Focal loss: https://arxiv.org/abs/1708.02002."""
-    one_hot = np.zeros_like(y_pred)
-    one_hot[np.arange(len(y_true)), y_true.astype(np.int)] = 1
-
-    soft = np.exp(y_pred - y_pred.max(1, keepdims=True))
-    soft /= soft.sum(1, keepdims=True)
-    soft = np.maximum(soft, np.finfo(soft.dtype).eps)  # prevent log(0)
-
-    diff = one_hot - soft
-    one_m_soft = np.maximum(1 - soft, np.finfo(soft.dtype).eps)  # prevent div-by-0
-    weights = weights.reshape(1, -1)  # 2D for broadcasting
-
-    grad = focus * one_m_soft ** (focus - 1) * np.log(soft) * diff
-    grad -= one_m_soft ** focus * diff
-    grad *= weights
-
-    hess = -focus * (focus - 1) * one_m_soft ** (focus - 2) * np.log(soft) * soft ** 2 * diff ** 2
-    hess += 2 * focus * one_m_soft ** (focus - 1) * soft * diff ** 2
-    hess += focus * one_m_soft ** (focus - 1) * np.log(soft) * soft * diff * (diff - soft)
-    hess += one_m_soft ** focus * soft * diff
-    hess = np.maximum(hess, np.finfo(hess.dtype).eps)  # numerical stability
-    hess *= weights
-
-    return grad.reshape(-1), hess.reshape(-1)
-
-
 def objective(
     X_train: CSVData,
     Y_train: CSVData,
@@ -382,9 +350,6 @@ def choose_model(
     subsample: float = 1.0,
     colsample_bytree: float = 1.0,
     reg_lambda: float = 1.0,
-    focus: float = 1.0,
-    alpha_1: float = 1.0,
-    alpha_2: float = 1.0,
     C: float = 1.0,
     svm_wt: float = 1.0,
     epochs: int = 50,
@@ -393,9 +358,6 @@ def choose_model(
     **kwargs,
 ) -> BaseClassifier:
     """Choose a model given the name and hyper-parameters."""
-    weights = np.array([1.0, alpha_1, alpha_2])  # 2D for broadcasting
-    weights /= sum(weights)
-
     xgb_model = XGBClassifier(
         n_estimators=n_estimators,
         max_depth=max_depth,
