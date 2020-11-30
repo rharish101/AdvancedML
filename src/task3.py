@@ -19,7 +19,6 @@ from tqdm import tqdm
 from tsfresh.feature_extraction.feature_calculators import (
     absolute_sum_of_changes,
     change_quantiles,
-    cid_ce,
     fft_aggregated,
     mean_abs_change,
     variance,
@@ -240,11 +239,9 @@ def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
     i = 0
     for x in tqdm(transformed):
         vchange_quantiles_abs = change_quantiles(x[:, -1], 0, 0.8, True, "var")
-        vchange_quantiles = change_quantiles(x[:, -1], 0, 0.8, False, "var")
         vfft_aggregated_k = list(fft_aggregated(x[:, -1], [{"aggtype": "kurtosis"}]))[0][1]
         vmean_abs_change = mean_abs_change(x[:, -1])
         vabsolute_sum_of_changes = absolute_sum_of_changes(x[:, -1])
-        vcid_ce = cid_ce(x[:, -1], normalize=False)
         vfft_aggregated_s = list(fft_aggregated(x[:, -1], [{"aggtype": "skew"}]))[0][1]
         vfft_aggregated_c = list(fft_aggregated(x[:, -1], [{"aggtype": "centroid"}]))[0][1]
         vvariance = variance(x[:, -1])
@@ -253,11 +250,9 @@ def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
         new_tsfresh = np.array(
             [
                 vchange_quantiles_abs,
-                vchange_quantiles,
                 vfft_aggregated_k,
                 vmean_abs_change,
                 vabsolute_sum_of_changes,
-                vcid_ce,
                 vfft_aggregated_s,
                 vfft_aggregated_c,
                 vvariance,
