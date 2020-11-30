@@ -253,6 +253,7 @@ def get_ecg_features(
         print("Transforming signal with biosppy...")
 
         for x in tqdm(raw_data):
+            x = np.array([i for i in x if not np.isnan(i)])
             extracted = ecg(x, sampling_rate=SAMPLING_RATE, show=False)
             if len(extracted["rpeaks"]) <= 1:
                 continue
