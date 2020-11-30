@@ -22,7 +22,7 @@ from xgboost import XGBClassifier
 from task3_nn import NN
 from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
-from utilities.model import evaluate_model, finalize_model, visualize_model
+from utilities.model import evaluate_model, finalize_model, read_selected_features, visualize_model
 
 TASK_DATA_DIRECTORY: Final[str] = "data/task3"
 TRAINING_DATA_NAME: Final[str] = "X_train.csv"
@@ -56,8 +56,8 @@ SMOTE_SPACE: Final = {
     "k_neighbors": hp.choice("k_neighbors", range(1, 10)),
 }
 LOC_SPACE: Final = {
-    "n_neighbors": hp.choice("n_neighbors", range(1, 30)),
-    "contamination": hp.quniform("contamination", 0.05, 0.5, 0.05),
+    "n_neighbors": hp.choice("n_neighbors", range(30, 150)),
+    "contamination": hp.quniform("contamination", 0.05, 0.2, 0.05),
 }
 ISOLATION_SPACE: Final = {
     "n_estimators": hp.choice("n_estimators", range(30, 150)),
@@ -80,8 +80,11 @@ def __main(args: Namespace) -> None:
     Y_train = Y_train[:, 1]
 
     X_train = get_ecg_features(
-        f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features, args.model == "nn"
+        f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features, Y_train, args.model == "nn"
     )
+
+    selected = read_selected_features(args.selected_features_path, X_train.shape[1])
+    X_train = X_train[:, selected]
 
     if args.select_features:
         X_train = statistical_feauture_selection(X_train, args.model == "nn")
@@ -164,7 +167,7 @@ def __main(args: Namespace) -> None:
         if args.select_features:
             X_test = statistical_feauture_selection(X_test, args.model == "nn")
 
-        # X_test = X_test[:, selected_features]
+        X_test = X_test[:, selected]
 
         # Assuming test IDs as in ascending order
         test_ids = np.arange(len(X_test))
@@ -211,7 +214,9 @@ def statistical_feauture_selection(data: np.ndarray, time_series: bool) -> np.nd
     return data
 
 
-def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) -> np.ndarray:
+def get_ecg_features(
+    raw_path: str, transformed_path: str, y: np.ndarray, stats: bool = False
+) -> np.ndarray:
     """Get ECG features from the raw data or the saved transformed data."""
     ecg_features = []
 
@@ -223,7 +228,7 @@ def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) 
             # If the model is an NN, we want the raw transformed signal
             return ecg_features
 
-        return extract_statistics(ecg_features)
+        return extract_statistics(ecg_features, y)
     else:
         raw_data, _ = read_csv(raw_path)
 
@@ -235,7 +240,6 @@ def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) 
         print("Transforming signal with biosppy...")
 
         for x in tqdm(raw_data):
-            x = np.array([v for v in x if not np.isnan(v)])
             extracted = ecg(x, sampling_rate=SAMPLING_RATE, show=False)
             if len(extracted["rpeaks"]) <= 1:
                 continue
@@ -250,17 +254,14 @@ def get_ecg_features(raw_path: str, transformed_path: str, stats: bool = False) 
             heart_rate = np.append(heart_rate, heart_rate[-1]).reshape(-1, 1)
             ecg_features.append(np.hstack((np.real(beats), np.imag(beats), heart_rate)))
 
-        ecg_features = np.array(ecg_features, dtype=object)
-        np.save(transformed_path, ecg_features)
-
         if stats:
             # If the model is an NN, we want the raw transformed signal
             return ecg_features
         else:
-            return extract_statistics(ecg_features)
+            return extract_statistics(ecg_features, y)
 
 
-def extract_statistics(transformed: np.ndarray) -> np.ndarray:
+def extract_statistics(transformed: np.ndarray, y: np.ndarray) -> np.ndarray:
     """Extract median and deviation statistics from the transformed ECG signals."""
     ecg_features = []
 
@@ -416,7 +417,6 @@ def choose_model(
     weights /= sum(weights)
 
     xgb_model = XGBClassifier(
-        objective=lambda y_true, y_pred: __loss(y_true, y_pred, focus=focus, weights=weights),
         n_estimators=n_estimators,
         max_depth=max_depth,
         learning_rate=learning_rate,
