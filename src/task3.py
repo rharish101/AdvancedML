@@ -165,7 +165,7 @@ def __main(args: Namespace) -> None:
     elif args.mode == "final":
         X_test = get_ecg_features(f"{args.data_dir}/{TEST_DATA_PATH}", args.test_features)
 
-        if args.feature_selection:
+        if args.select_features:
             selected = feature_selection(model, X_train, Y_train, args.selected_features_path)
 
         X_test = X_test[:, selected]
