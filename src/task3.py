@@ -216,10 +216,9 @@ def get_ecg_features(raw_path: str, transformed_path: str) -> np.ndarray:
 
 def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
     """Extract all tsfresh features from heart rate."""
-    ecg_features = None
+    ecg_features = []
     print("Extracting TSFRESH statistics from heart rate signals...")
 
-    i = 0
     for x in tqdm(transformed):
         vchange_quantiles_abs = change_quantiles(x[:, -1], 0, 0.8, True, "var")
         vfft_aggregated_k = list(fft_aggregated(x[:, -1], [{"aggtype": "kurtosis"}]))[0][1]
@@ -243,19 +242,9 @@ def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
             ]
         )
 
-        ecg_features = (
-            np.vstack(
-                (
-                    ecg_features,
-                    new_tsfresh,
-                )
-            )
-            if ecg_features is not None
-            else new_tsfresh
-        )
-        i += 1
+        ecg_features.append(np.concatenate(new_tsfresh, axis=0))
 
-    return ecg_features
+    return np.array(ecg_features)
 
 
 def extract_statistics(transformed: np.ndarray) -> np.ndarray:
