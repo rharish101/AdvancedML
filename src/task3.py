@@ -28,13 +28,7 @@ from xgboost import XGBClassifier
 
 from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
-from utilities.model import (
-    evaluate_model,
-    feature_selection,
-    finalize_model,
-    read_selected_features,
-    visualize_model,
-)
+from utilities.model import evaluate_model, feature_selection, finalize_model, visualize_model
 
 TASK_DATA_DIRECTORY: Final[str] = "data/task3"
 TRAINING_DATA_NAME: Final[str] = "X_train.csv"
@@ -87,8 +81,15 @@ def __main(args: Namespace) -> None:
 
     X_train = get_ecg_features(f"{args.data_dir}/{TRAINING_DATA_NAME}", args.train_features)
 
-    if not args.select_features:
-        selected = read_selected_features(args.selected_features_path, X_train.shape[1])
+    # Load hyper-parameters, if a config exists
+    with open(args.config, "r") as conf_file:
+        config = yaml.safe_load(conf_file)
+    config = {} if config is None else config
+
+    model = choose_model(args.model, args.log_dir, **config)
+
+    if args.select_features:
+        selected = feature_selection(model, X_train, Y_train, args.selected_features_path, k=5)
         X_train = X_train[:, selected]
 
     if args.mode == "tune":
@@ -97,28 +98,20 @@ def __main(args: Namespace) -> None:
         outlier_space = OUTLIER_SPACE[args.outlier] if args.outlier is not None else {}
         space = {**MODEL_SPACE[args.model], **smote_space, **outlier_space}
 
-        saved_config = {}
-
         if args.extend:
-            with open(args.config, "r") as conf_file:
-                saved_config = yaml.safe_load(conf_file)
-            saved_config = {} if saved_config is None else saved_config
-
-            space = {
-                k: v
-                for k, v in space.items()
-                if not any(str(k2) in str(k) for k2, _ in saved_config.items())
-            }
+            space = {key: val for key, val in space.items() if key not in config}
+        else:
+            config = {}
 
         best = fmin(
-            lambda config: objective(
+            lambda hp_config: objective(
                 X_train,
                 Y_train,
                 args.model,
                 args.log_dir,
                 args.smote,
                 args.outlier,
-                {**config, **saved_config},
+                {**hp_config, **config},
             ),
             space,
             algo=tpe.suggest,
@@ -135,13 +128,7 @@ def __main(args: Namespace) -> None:
         print(f"Best parameters saved in {args.config}")
         return
 
-    # Load hyper-parameters, if a config exists
-    with open(args.config, "r") as conf_file:
-        config = yaml.safe_load(conf_file)
-    config = {} if config is None else config
-
     smote_fn = get_smote_fn(**config) if args.smote else None
-    model = choose_model(args.model, args.log_dir, **config)
     outlier_detection = (
         get_outlier_detection(args.outlier, **config)
         if args.outlier is not None
@@ -165,9 +152,7 @@ def __main(args: Namespace) -> None:
         X_test = get_ecg_features(f"{args.data_dir}/{TEST_DATA_PATH}", args.test_features)
 
         if args.select_features:
-            selected = feature_selection(model, X_train, Y_train, args.selected_features_path)
-
-        X_test = X_test[:, selected]
+            X_test = X_test[:, selected]
 
         # Assuming test IDs as in ascending order
         test_ids = np.arange(len(X_test))
@@ -469,9 +454,10 @@ if __name__ == "__main__":
         help="where the test features are stored or should be stored",
     )
     parser.add_argument(
-        "--select-features",
-        action="store_true",
-        help="whether to train the most optimal features",
+        "--keep-features",
+        dest="select_features",
+        action="store_false",
+        help="whether to skip training the most optimal features",
     )
     parser.add_argument(
         "--selected-features-path",
