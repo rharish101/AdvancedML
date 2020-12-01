@@ -5,7 +5,6 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
-import pandas as pd
 import yaml
 from biosppy.signals.ecg import ecg
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
@@ -24,7 +23,6 @@ from tsfresh.feature_extraction.feature_calculators import (
     variance,
     variation_coefficient,
 )
-from tsfresh.utilities.dataframe_functions import impute
 from typing_extensions import Final
 from xgboost import XGBClassifier
 
@@ -271,8 +269,6 @@ def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
             else new_tsfresh
         )
         i += 1
-
-    impute(pd.DataFrame(data=ecg_features))
 
     return ecg_features
 
