@@ -370,7 +370,7 @@ def choose_model(
     colsample_bytree: float = 1.0,
     reg_lambda: float = 1.0,
     C: float = 1.0,
-    svm_wt: float = 1.0,
+    nn_wt: float = 1.0,
     epochs: int = 50,
     batch_size: int = 64,
     nn_lr: float = 1e-3,
@@ -412,9 +412,11 @@ def choose_model(
     elif name == "svm":
         return svm_model
     elif name == "ensemble":
-        model_wt = np.array([1.0, svm_wt])
+        model_wt = np.array([1.0, nn_wt])
         model_wt /= sum(model_wt)
-        return VotingClassifier([("xgb", xgb_model), ("svm", svm_model)], weights=model_wt)
+        return VotingClassifier(
+            [("xgb", xgb_model), ("nn", nn_model)], voting="soft", weights=model_wt
+        )
     elif name == "forest":
         return random_forest_classifier
     elif name == "nn":
