@@ -454,7 +454,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model",
-        choices=["xgb", "svm", "ensemble", "forest"],
+        choices=["xgb", "svm", "ensemble", "forest", "nn"],
         default="xgb",
         help="the choice of model to train",
     )

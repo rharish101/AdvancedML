@@ -6,7 +6,7 @@ min_child_weight: 4.649065854236865
 n_estimators: 251
 reg_lambda: 0.3983799524874242
 subsample: 0.9707244844472132
-nn_lr: 0.001
+nn_lr: 0.0001
 balance_weights: false
-epochs: 25
-weight_decay: 0.001
+epochs: 100
+weight_decay: 0.0

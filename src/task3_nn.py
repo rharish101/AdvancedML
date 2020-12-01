@@ -5,15 +5,16 @@ from typing import Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import RobustScaler
 from torch import Tensor
 from torch.nn import (
-    BatchNorm1d,
-    Conv1d,
+    SELU,
+    AlphaDropout,
     CrossEntropyLoss,
-    Linear,
-    MaxPool1d,
+    Identity,
     Module,
-    ReLU,
+    Parameter,
     Sequential,
     Softmax,
 )
@@ -25,51 +26,31 @@ from tqdm import tqdm
 from typings import BaseClassifier, CSVData
 
 
-class ResidualBlock(Module):
-    """Layer for residual block.
+class SNNDense(Module):
+    """Class for dense layers in SNNs.
 
-    The block consists of:
-        * Conv
-        * BatchNorm
-        * ReLU
-        * Conv
-        * Skip connection
-        * BatchNorm
-        * ReLU
-        * MaxPool
+    Paper link: https://arxiv.org/abs/1706.02515.
     """
 
-    def __init__(self, channels: int, kernel_size: int = 5, stride: int = 2):
-        """Initialize the layers."""
+    def __init__(
+        self, in_features: int, out_features: int, activation: Module = SELU, dropout: bool = True
+    ):
+        """Initialize the weights."""
         super().__init__()
-        padding = (kernel_size - 1) // 2
-        self.before = Sequential(
-            Conv1d(channels, channels, kernel_size=kernel_size, bias=False, padding=padding),
-            BatchNorm1d(channels),
-            ReLU(),
-            Conv1d(channels, channels, kernel_size=kernel_size, bias=False, padding=padding),
-        )
-        self.after = Sequential(
-            BatchNorm1d(channels),
-            ReLU(),
-            MaxPool1d(kernel_size=kernel_size, stride=stride, padding=padding),
-        )
+        stddev = np.sqrt(1 / in_features)
+        self.activation = activation()
+
+        if dropout:
+            self.dropout = AlphaDropout(0.2)
+        else:
+            self.dropout = Identity()
+
+        self.weights = Parameter(torch.randn([in_features, out_features]) * stddev)
+        self.bias = Parameter(torch.zeros([out_features]))
 
     def forward(self, x: Tensor) -> Tensor:
-        """Return the output."""
-        return self.after(self.before(x) + x)
-
-
-class GlobalAvgPool1d(Module):
-    """Layer for global average pooling."""
-
-    def __init__(self):
-        """Initialize the superclass."""
-        super().__init__()
-
-    def forward(self, x: Tensor) -> Tensor:
-        """Return the output."""
-        return x.mean(dim=-1)
+        """Get the output."""
+        return self.activation(self.dropout(x) @ self.weights + self.bias)
 
 
 class NN(BaseClassifier):
@@ -115,20 +96,13 @@ class NN(BaseClassifier):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def _init_model(self, num_classes: int) -> None:
+    def _init_model(self, in_features, num_classes: int) -> None:
         self.model = Sequential(
-            Conv1d(1, 64, 5, padding=1),
-            BatchNorm1d(64),
-            ResidualBlock(64),
-            ResidualBlock(64),
-            ResidualBlock(64),
-            ResidualBlock(64),
-            ResidualBlock(64),
-            GlobalAvgPool1d(),
-            Linear(64, 64, bias=False),
-            BatchNorm1d(64),
-            ReLU(),
-            Linear(64, num_classes),
+            SNNDense(in_features, 1024, dropout=False),
+            SNNDense(1024, 256),
+            SNNDense(256, 64),
+            SNNDense(64, 16),
+            SNNDense(16, num_classes, activation=Identity),
         ).to(self.device)
 
     @staticmethod
@@ -147,10 +121,9 @@ class NN(BaseClassifier):
         if rng is not None:
             rng.shuffle(indices)
 
-        for i in range(0, len(X), self.batch_size):
+        for i in range(0, len(indices), self.batch_size):
             batch_indices = indices[i : i + self.batch_size]
             batch_X = torch.from_numpy(X[batch_indices]).to(self.device)
-            batch_X = batch_X.unsqueeze(1)  # [n, l] => [n, 1, l]
 
             if y is None:
                 yield batch_X
@@ -163,18 +136,25 @@ class NN(BaseClassifier):
 
         Parameters
         ----------
-        X: The list of 2D input data where the 1st dimension is of variable length
+        X: The 2D input data
         y: The corresponding output integer labels
         """
         X = X.astype(np.float32)
         y = y.astype(np.int64)
 
+        self.imputer = SimpleImputer(strategy="median")
+        X = self.imputer.fit_transform(X)
+
+        self.scaler = RobustScaler()
+        X = self.scaler.fit_transform(X)
+
         class_count = np.bincount(y.astype(np.int64))
         num_classes = len(class_count)
+        in_features = X.shape[1]
         self.classes_ = np.arange(num_classes)
         total_batches = np.ceil(len(X) / self.batch_size)
 
-        self._init_model(num_classes)
+        self._init_model(in_features, num_classes)
 
         if self.balance_weights:
             class_weights = torch.from_numpy((1 / class_count).astype(np.float32)).to(self.device)
@@ -221,13 +201,16 @@ class NN(BaseClassifier):
 
         Parameters
         ----------
-        X: The list of 2D input data where the 1st dimension is of variable length
+        X: The 2D input data
 
         Returns
         -------
         The 2D array of class probabilities
         """
         X = X.astype(np.float32)
+        X = self.imputer.transform(X)
+        X = self.scaler.transform(X)
+
         pred = []
         softmax_func = Softmax(dim=-1)
 
@@ -243,7 +226,7 @@ class NN(BaseClassifier):
 
         Parameters
         ----------
-        X: The list of 2D input data where the 1st dimension is of variable length
+        X: The 2D input data
 
         Returns
         -------
