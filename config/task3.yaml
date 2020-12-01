@@ -1,4 +1,12 @@
-learning_rate: 0.001
+colsample_bytree: 0.5
+gamma_xgb: 0.6497172321084626
+xgb_lr: 0.03
+max_depth: 10
+min_child_weight: 4.649065854236865
+n_estimators: 251
+reg_lambda: 0.3983799524874242
+subsample: 0.9707244844472132
+nn_lr: 0.001
 balance_weights: false
 epochs: 25
-reg_lambda: 0.001
+weight_decay: 0.001

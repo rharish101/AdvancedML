@@ -2,25 +2,34 @@
 """The entry point for the scripts for Task 3."""
 import os
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import yaml
 from biosppy.signals.ecg import ecg
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
 from imblearn.over_sampling import RandomOverSampler
+from scipy.fft import fft
+from scipy.stats import median_abs_deviation
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
-from sklearn.feature_selection import VarianceThreshold
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import SVC
 from tqdm import tqdm
+from tsfresh.feature_extraction.feature_calculators import (
+    absolute_sum_of_changes,
+    change_quantiles,
+    fft_aggregated,
+    mean_abs_change,
+    variance,
+    variation_coefficient,
+)
 from typing_extensions import Final
 from xgboost import XGBClassifier
 
 from task3_nn import NN
 from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
-from utilities.model import SamplerFnType, evaluate_model, finalize_model, visualize_model
+from utilities.model import evaluate_model, feature_selection, finalize_model, visualize_model
 
 TRAINING_DATA_CSV: Final = "X_train.csv"
 TRAINING_LABELS_CSV: Final = "y_train.csv"
@@ -33,15 +42,12 @@ TEST_FEAT_NPY: Final = "test-features.npy"
 XGB_SPACE: Final = {
     "n_estimators": hp.choice("n_estimators", range(10, 500)),
     "max_depth": hp.choice("max_depth", range(2, 20)),
-    "learning_rate": hp.quniform("learning_rate", 0.01, 1.0, 0.01),
+    "xgb_lr": hp.quniform("xgb_lr", 0.01, 1.0, 0.01),
     "gamma_xgb": hp.uniform("gamma_xgb", 0.0, 1.0),
     "min_child_weight": hp.uniform("min_child_weight", 1, 8),
     "subsample": hp.uniform("subsample", 0.8, 1),
     "colsample_bytree": hp.quniform("colsample_bytree", 0.5, 1.0, 0.05),
     "reg_lambda": hp.lognormal("reg_lambda", 1.0, 1.0),
-    "focus": hp.lognormal("focus", 1.0, 1.0),
-    "alpha_1": hp.lognormal("alpha_1", 1.0, 1.0),
-    "alpha_2": hp.lognormal("alpha_2", 1.0, 1.0),
 }
 SVM_SPACE: Final = {"C": hp.lognormal("C", 1.0, 1.0)}
 ENSEMBLE_SPACE: Final = {
@@ -56,8 +62,8 @@ SMOTE_SPACE: Final = {
     "k_neighbors": hp.choice("k_neighbors", range(1, 10)),
 }
 LOC_SPACE: Final = {
-    "n_neighbors": hp.choice("n_neighbors", range(1, 30)),
-    "contamination": hp.quniform("contamination", 0.05, 0.5, 0.05),
+    "n_neighbors": hp.choice("n_neighbors", range(30, 150)),
+    "contamination": hp.quniform("contamination", 0.05, 0.2, 0.05),
 }
 ISOLATION_SPACE: Final = {
     "n_estimators": hp.choice("n_estimators", range(30, 150)),
@@ -66,71 +72,6 @@ ISOLATION_SPACE: Final = {
 OUTLIER_SPACE: Final = {"loc": LOC_SPACE, "isolation": ISOLATION_SPACE}
 
 SAMPLING_RATE: Final = 300.0
-
-
-class ECGModel(BaseClassifier):
-    """Wrapper that takes ECGs for models that take heartbeats."""
-
-    def __init__(self, model: BaseClassifier):
-        """Store the actual model."""
-        super().__init__()
-        self.model = model
-
-    def fit(self, X: np.ndarray, y: np.ndarray, smote_fn: SamplerFnType = None) -> None:
-        """Train the model.
-
-        Parameters
-        ----------
-        X: The list of 2D input data where the 1st dimension is of variable length
-        y: The corresponding output integer labels
-        smote_fn: The function that takes labels and returns SMOTE
-        """
-        y_flat = np.array([yi for xi, yi in zip(X, y) for _ in range(len(xi))])
-        X_flat = np.concatenate(X, axis=0)
-
-        if smote_fn:
-            print("Resampling data...")
-            smote = smote_fn(y_flat)
-            X_flat, y_flat = smote.fit_resample(X_flat, y_flat)
-
-        print("Fitting model...")
-        self.model.fit(X_flat, y_flat)
-
-    def predict_proba(self, X: List[CSVData]) -> np.ndarray:
-        """Predict the class probabilities by weighing class probabilites.
-
-        Parameters
-        ----------
-        X: The list of 2D input data where the 1st dimension is of variable length
-
-        Returns
-        -------
-        The 2D array of class probabilities
-        """
-        pred = []
-
-        for xi in X:
-            try:
-                probabilities = self.model.predict_proba(xi)
-            except AttributeError:
-                # Must be an SVM w/o probability=True
-                probabilities = self.model.decision_function(xi)
-            pred.append(probabilities.mean(axis=0))
-
-        return np.array(pred)
-
-    def predict(self, X: List[CSVData]) -> np.ndarray:
-        """Predict the classes by weighing class probabilites.
-
-        Parameters
-        ----------
-        X: The list of 2D input data where the 1st dimension is of variable length
-
-        Returns
-        -------
-        The 1D array of class predictions
-        """
-        return self.predict_proba(X).argmax(axis=1)
 
 
 def __main(args: Namespace) -> None:
@@ -149,8 +90,16 @@ def __main(args: Namespace) -> None:
     # Remove training IDs, as they are in sorted order for training data
     Y_train = Y_train[:, 1]
 
+    # Load hyper-parameters, if a config exists
+    with open(args.config, "r") as conf_file:
+        config = yaml.safe_load(conf_file)
+    config = {} if config is None else config
+
+    model = choose_model(args.model, args.log_dir, **config)
+
     if args.select_features:
-        X_train = statistical_feauture_selection(X_train, args.model == "nn")
+        selected = feature_selection(model, X_train, Y_train, args.selected_features_path, k=5)
+        X_train = X_train[:, selected]
 
     if args.mode == "tune":
         print("Starting hyper-parameter tuning")
@@ -158,28 +107,20 @@ def __main(args: Namespace) -> None:
         outlier_space = OUTLIER_SPACE[args.outlier] if args.outlier is not None else {}
         space = {**MODEL_SPACE[args.model], **smote_space, **outlier_space}
 
-        saved_config = {}
-
         if args.extend:
-            with open(args.config, "r") as conf_file:
-                saved_config = yaml.safe_load(conf_file)
-            saved_config = {} if saved_config is None else saved_config
-
-            space = {
-                k: v
-                for k, v in space.items()
-                if not any(str(k2) in str(k) for k2, _ in saved_config.items())
-            }
+            space = {key: val for key, val in space.items() if key not in config}
+        else:
+            config = {}
 
         best = fmin(
-            lambda config: objective(
+            lambda hp_config: objective(
                 X_train,
                 Y_train,
                 args.model,
                 args.log_dir,
                 args.smote,
                 args.outlier,
-                {**config, **saved_config},
+                {**hp_config, **config},
             ),
             space,
             algo=tpe.suggest,
@@ -196,13 +137,7 @@ def __main(args: Namespace) -> None:
         print(f"Best parameters saved in {args.config}")
         return
 
-    # Load hyper-parameters, if a config exists
-    with open(args.config, "r") as conf_file:
-        config = yaml.safe_load(conf_file)
-    config = {} if config is None else config
-
     smote_fn = get_smote_fn(**config) if args.smote else None
-    model = ECGModel(choose_model(args.model, args.log_dir, **config))
     outlier_detection = (
         get_outlier_detection(args.outlier, **config)
         if args.outlier is not None
@@ -229,8 +164,9 @@ def __main(args: Namespace) -> None:
             os.path.join(args.data_dir, TEST_DATA_CSV),
             os.path.join(args.features_dir, TEST_FEAT_NPY),
         )
+
         if args.select_features:
-            X_test = statistical_feauture_selection(X_test, args.model == "nn")
+            X_test = X_test[:, selected]
 
         # Assuming test IDs as in ascending order
         test_ids = np.arange(len(X_test))
@@ -253,86 +189,94 @@ def __main(args: Namespace) -> None:
         raise ValueError(f"Invalid mode: {args.mode}")
 
 
-def statistical_feauture_selection(data: np.ndarray, time_series: bool) -> np.ndarray:
-    """Do simple feature selection based on statistical characteristics of data."""
-    vt = VarianceThreshold()
+def get_ecg_features(raw_path: str, transformed_path: str) -> np.ndarray:
+    """Get ECG features from the raw data or the saved transformed data."""
+    if os.path.exists(transformed_path):
+        print("Loading features from %s..." % transformed_path)
+        return np.load(transformed_path)
 
-    if time_series:
-        shapes = [x.shape[0] for x in data]
-        data = [x for y in data for x in y]
-
-    data = vt.fit_transform(data)
-
-    if time_series:
-        X_train_new = []
-
-        i = 0
-        for shape in shapes:
-            j = i
-            i += shape
-            X_train_new.append(data[j:i])
-
-        data = np.array(X_train_new, dtype=object)
-
-    return data
-
-
-def get_ecg_features(data_path: str, features_path: str) -> np.ndarray:
-    """Get test data from the raw data or the saved pre-processed data."""
-    if os.path.exists(features_path):
-        print("Loading pre-processed test data...")
-        X = np.load(features_path, allow_pickle=True)
-        return X
-
-    # Read in data
-    X, _ = read_csv(data_path)
-
-    if X is None:
+    raw_data, _ = read_csv(raw_path)
+    if raw_data is None:
         raise RuntimeError("There was a problem with reading CSV data")
-
-    # Remove test IDs, as they are in sorted order for test data
-    X = X[:, 1:]
+    # Remove the IDs
+    raw_data = raw_data[:, 1:]
 
     ecg_features = []
+    print("Transforming signal with biosppy...")
 
-    print("Pre-processing test data with biosppy...")
-    for xi in tqdm(X):
-        xi = np.array([v for v in xi if not np.isnan(v)])
-        beats = ecg(xi, sampling_rate=SAMPLING_RATE, show=False)["templates"]
-        ecg_features.append(beats)
+    for x in tqdm(raw_data):
+        x = np.array([i for i in x if not np.isnan(i)])
+        extracted = ecg(x, sampling_rate=SAMPLING_RATE, show=False)
+        beats = fft(extracted["templates"])
 
-    ecg_features = np.array(ecg_features, dtype=object)
-    np.save(features_path, ecg_features)
-    return ecg_features
+        # We don't use the given heart rate as it applies physiological limits
+        # (40 <= heart rate <= 200), and thus this may be empty. We also don't care about
+        # smoothing it, as we're using median and MAD anyway.
+        heart_rate = SAMPLING_RATE * (60.0 / np.diff(extracted["rpeaks"]))
+        # Duplicate last element so that heart_rate and beats are of same length
+        heart_rate = np.append(heart_rate, heart_rate[-1]).reshape(-1, 1)
+        ecg_features.append(np.hstack((np.real(beats), np.imag(beats), heart_rate)))
+
+    final_features = np.hstack(
+        (
+            extract_statistics(ecg_features),
+            extract_heartrate_tsfresh(ecg_features),
+        )
+    )
+
+    np.save(transformed_path, final_features)
+    return final_features
 
 
-def __loss(
-    y_true: np.ndarray, y_pred: np.ndarray, focus: float, weights: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Focal loss: https://arxiv.org/abs/1708.02002."""
-    one_hot = np.zeros_like(y_pred)
-    one_hot[np.arange(len(y_true)), y_true.astype(np.int)] = 1
+def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
+    """Extract all tsfresh features from heart rate."""
+    ecg_features = []
+    print("Extracting TSFRESH statistics from heart rate signals...")
 
-    soft = np.exp(y_pred - y_pred.max(1, keepdims=True))
-    soft /= soft.sum(1, keepdims=True)
-    soft = np.maximum(soft, np.finfo(soft.dtype).eps)  # prevent log(0)
+    for x in tqdm(transformed):
+        vchange_quantiles_abs = change_quantiles(x[:, -1], 0, 0.8, True, "var")
+        vfft_aggregated_k = list(fft_aggregated(x[:, -1], [{"aggtype": "kurtosis"}]))[0][1]
+        vmean_abs_change = mean_abs_change(x[:, -1])
+        vabsolute_sum_of_changes = absolute_sum_of_changes(x[:, -1])
+        vfft_aggregated_s = list(fft_aggregated(x[:, -1], [{"aggtype": "skew"}]))[0][1]
+        vfft_aggregated_c = list(fft_aggregated(x[:, -1], [{"aggtype": "centroid"}]))[0][1]
+        vvariance = variance(x[:, -1])
+        vvariation_coefficient = variation_coefficient(x[:, -1])
 
-    diff = one_hot - soft
-    one_m_soft = np.maximum(1 - soft, np.finfo(soft.dtype).eps)  # prevent div-by-0
-    weights = weights.reshape(1, -1)  # 2D for broadcasting
+        new_tsfresh = np.array(
+            [
+                vchange_quantiles_abs,
+                vfft_aggregated_k,
+                vmean_abs_change,
+                vabsolute_sum_of_changes,
+                vfft_aggregated_s,
+                vfft_aggregated_c,
+                vvariance,
+                vvariation_coefficient,
+            ]
+        )
 
-    grad = focus * one_m_soft ** (focus - 1) * np.log(soft) * diff
-    grad -= one_m_soft ** focus * diff
-    grad *= weights
+        ecg_features.append(np.concatenate(new_tsfresh, axis=0))
 
-    hess = -focus * (focus - 1) * one_m_soft ** (focus - 2) * np.log(soft) * soft ** 2 * diff ** 2
-    hess += 2 * focus * one_m_soft ** (focus - 1) * soft * diff ** 2
-    hess += focus * one_m_soft ** (focus - 1) * np.log(soft) * soft * diff * (diff - soft)
-    hess += one_m_soft ** focus * soft * diff
-    hess = np.maximum(hess, np.finfo(hess.dtype).eps)  # numerical stability
-    hess *= weights
+    return np.array(ecg_features)
 
-    return grad.reshape(-1), hess.reshape(-1)
+
+def extract_statistics(transformed: np.ndarray) -> np.ndarray:
+    """Extract median and deviation statistics from the transformed ECG signals."""
+    ecg_features = []
+    print("Extracting statistics from transformed signals...")
+
+    for x in tqdm(transformed):
+        median_temp = np.median(x[:, :-1], axis=0)
+        mad_temp = median_abs_deviation(x[:, :-1], axis=0)
+
+        median_hr = np.median(x[:, -1], keepdims=True)
+        mad_hr = median_abs_deviation(x[:, -1]).reshape([-1])
+
+        features = np.concatenate([median_temp, mad_temp, median_hr, mad_hr])
+        ecg_features.append(features)
+
+    return np.array(ecg_features)
 
 
 def objective(
@@ -347,7 +291,7 @@ def objective(
     """Get the objective function for Hyperopt."""
     try:
         smote_fn = get_smote_fn(**config) if smote else None  # type:ignore
-        model = ECGModel(choose_model(model, log_dir, **config))  # type:ignore
+        model = choose_model(model, log_dir, **config)  # type:ignore
 
         outlier_detection = (
             get_outlier_detection(outlier, **config) if outlier is not None else None  # type:ignore
@@ -419,33 +363,28 @@ def choose_model(
     log_dir: str = "logs",
     n_estimators: int = 100,
     max_depth: int = 6,
-    learning_rate: float = 0.3,
+    xgb_lr: float = 0.3,
     gamma_xgb: float = 0.0,
     min_child_weight: float = 1.0,
     subsample: float = 1.0,
     colsample_bytree: float = 1.0,
     reg_lambda: float = 1.0,
-    focus: float = 1.0,
-    alpha_1: float = 1.0,
-    alpha_2: float = 1.0,
     C: float = 1.0,
     svm_wt: float = 1.0,
     epochs: int = 50,
     batch_size: int = 64,
+    nn_lr: float = 1e-3,
     lr_step: int = 10000,
     lr_decay: float = 0.75,
+    weight_decay: float = 1e-3,
     balance_weights: bool = True,
     **kwargs,
 ) -> BaseClassifier:
     """Choose a model given the name and hyper-parameters."""
-    weights = np.array([1.0, alpha_1, alpha_2])  # 2D for broadcasting
-    weights /= sum(weights)
-
     xgb_model = XGBClassifier(
-        objective=lambda y_true, y_pred: __loss(y_true, y_pred, focus=focus, weights=weights),
         n_estimators=n_estimators,
         max_depth=max_depth,
-        learning_rate=learning_rate,
+        learning_rate=xgb_lr,
         gamma=gamma_xgb,
         min_child_weight=min_child_weight,
         subsample=subsample,
@@ -453,19 +392,17 @@ def choose_model(
         reg_lambda=reg_lambda,
         random_state=0,
     )
-
-    xgb_model = XGBClassifier(random_state=0)
-
     svm_model = SVC(C=C, class_weight="balanced", random_state=0)
-
     random_forest_classifier = RandomForestClassifier()
 
     nn_model = NN(
         epochs=epochs,
         batch_size=batch_size,
         log_dir=log_dir,
+        learning_rate=nn_lr,
         lr_step=lr_step,
         lr_decay=lr_decay,
+        weight_decay=weight_decay,
         balance_weights=balance_weights,
         random_state=0,
     )
@@ -517,7 +454,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model",
-        choices=["xgb", "svm", "ensemble", "forest", "nn"],
+        choices=["xgb", "svm", "ensemble", "forest"],
         default="xgb",
         help="the choice of model to train",
     )
@@ -528,15 +465,16 @@ if __name__ == "__main__":
         help="the path to the YAML config for the hyper-parameters",
     )
     parser.add_argument(
+        "--keep-features",
+        dest="select_features",
+        action="store_false",
+        help="whether to skip training the most optimal features",
+    )
+    parser.add_argument(
         "--selected-features-path",
         type=str,
         default="config/features-task3.txt",
         help="where the most optimal features are stored",
-    )
-    parser.add_argument(
-        "--select-features",
-        action="store_true",
-        help="whether to train the most optimal features",
     )
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
 

@@ -1,7 +1,6 @@
 """Utility functions for model-related tasks."""
 import os
 from typing import Any, Callable, List, Optional, Tuple
-from warnings import warn
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -132,8 +131,12 @@ def evaluate_model(
             X_train_cv = X_train_cv[outliers == 1]
             Y_train_cv = Y_train_cv[outliers == 1]
 
+        if smote_fn:
+            smote = smote_fn(Y_train_cv)
+            X_train_cv, Y_train_cv = smote.fit_resample(X_train_cv, Y_train_cv)
+
         try:
-            model.fit(X_train_cv, Y_train_cv, smote_fn=smote_fn)
+            model.fit(X_train_cv, Y_train_cv)
         except KeyboardInterrupt:
             pass
 
@@ -187,7 +190,11 @@ def finalize_model(
         X_train = X_train[outliers == 1]
         Y_train = Y_train[outliers == 1]
 
-    model.fit(X_train, Y_train, smote_fn=smote_fn)
+    if smote_fn:
+        smote = smote_fn(Y_train)
+        X_train, Y_train = smote.fit_resample(X_train, Y_train)
+
+    model.fit(X_train, Y_train)
 
     print("Model trained")
     Y_pred = model.predict(X_test)
@@ -252,28 +259,8 @@ def finalize_model_balanced_ensemble(
     create_submission_file(output, submission, header=("id", "y"))
 
 
-def read_selected_features(features_path: str, number_of_features: int) -> List[bool]:
-    """Read from SELECTED_FEATURES_PATH which features to be select. If nonexistent, selects all.
-
-    Parameters
-    ----------
-    features_path: The path to the saved features
-    number_of_features: The dimensionality of the data
-
-    Returns
-    -------
-    The list of booleans indicating which features to preserve
-    """
-    if os.path.exists(features_path):
-        print("Loading selected features from %s..." % features_path)
-        return [True if i == 1 else False for i in np.loadtxt(features_path, dtype=int)]
-    else:
-        warn(f"No saved features found at: {features_path}. All features will be kept.")
-        return [True for i in range(number_of_features)]
-
-
 def feature_selection(
-    model: BaseRegressor, X_train: CSVData, Y_train: CSVData, k: int, features_path: str
+    model: BaseRegressor, X_train: CSVData, Y_train: CSVData, features_path: str, k: int
 ) -> List[bool]:
     """Determine the features yielding best score, and save them.
 
@@ -282,13 +269,18 @@ def feature_selection(
     model: The model that one wishes to use
     X_train: The training data
     Y_train: The training labels
-    k: The number of folds in k-fold cross-validation
     features_path: The path where to save the features
+    k: The number of folds in k-fold cross-validation
 
     Returns
     -------
     The list of booleans indicating which features to select
     """
+    if os.path.exists(features_path):
+        print(f"Loading feature selection from {features_path}...")
+        return [bool(i) for i in np.loadtxt(features_path, dtype=int)]
+
+    print("Performing feature selection...")
     rec_sel = RFECV(model, step=5, cv=k, verbose=1)
     rec_sel.fit(X_train, Y_train)
     np.savetxt(features_path, rec_sel.support_, fmt="%d")
