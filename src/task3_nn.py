@@ -33,15 +33,15 @@ class SNNDense(Module):
     """
 
     def __init__(
-        self, in_features: int, out_features: int, activation: Module = SELU, dropout: bool = True
+        self, in_features: int, out_features: int, activation: Module = SELU(), dropout: bool = True
     ):
         """Initialize the weights."""
         super().__init__()
         stddev = np.sqrt(1 / in_features)
-        self.activation = activation()
+        self.activation = activation
 
         if dropout:
-            self.dropout = AlphaDropout(0.2)
+            self.dropout: Module = AlphaDropout(0.2)
         else:
             self.dropout = Identity()
 
@@ -102,7 +102,7 @@ class NN(BaseClassifier):
             SNNDense(1024, 256),
             SNNDense(256, 64),
             SNNDense(64, 16),
-            SNNDense(16, num_classes, activation=Identity),
+            SNNDense(16, num_classes, activation=Identity()),
         ).to(self.device)
 
     @staticmethod
@@ -156,12 +156,11 @@ class NN(BaseClassifier):
 
         self._init_model(in_features, num_classes)
 
+        class_weights: Optional[Tensor] = None
         if self.balance_weights:
             class_weights = torch.from_numpy((1 / class_count).astype(np.float32)).to(self.device)
             # Normalize weights such that equal class frequencies imply 1:1:1 ratio
             class_weights /= class_weights.min()
-        else:
-            class_weights = None
 
         loss_func = CrossEntropyLoss(class_weights)
         optim = Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
