@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import yaml
-from biosppy.signals.ecg import ecg
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
 from imblearn.over_sampling import RandomOverSampler
 from scipy.fft import fft
@@ -15,14 +14,6 @@ from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClas
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import SVC
 from tqdm import tqdm
-from tsfresh.feature_extraction.feature_calculators import (
-    absolute_sum_of_changes,
-    change_quantiles,
-    fft_aggregated,
-    mean_abs_change,
-    variance,
-    variation_coefficient,
-)
 from typing_extensions import Final
 from xgboost import XGBClassifier
 
@@ -31,9 +22,14 @@ from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
 from utilities.model import evaluate_model, feature_selection, finalize_model, visualize_model
 
-TRAINING_DATA_CSV: Final = "X_train.csv"
-TRAINING_LABELS_CSV: Final = "y_train.csv"
-TEST_DATA_CSV: Final = "X_test.csv"
+TRAINING_EEG1_DATA_CSV: Final = "train_eeg1.csv"
+TRAINING_EEG2_DATA_CSV: Final = "train_eeg2.csv"
+TRAINING_EMG_DATA_CSV: Final = "train_emg.csv"
+TRAINING_LABELS_CSV: Final = "train_labels.csv"
+
+TEST_DATA_EEG1_CSV: Final = "test_eeg1.csv"
+TEST_DATA_EEG2_CSV: Final = "test_eeg2.csv"
+TEST_DATA_EMG_CSV: Final = "test_emg.csv"
 
 TRAINING_FEAT_NPY: Final = "train-features.npy"
 TEST_FEAT_NPY: Final = "test-features.npy"
@@ -78,12 +74,17 @@ def __main(args: Namespace) -> None:
     if not os.path.exists(args.features_dir):
         os.makedirs(args.features_dir)
 
-    X_train = get_ecg_features(
-        os.path.join(args.data_dir, TRAINING_DATA_CSV),
-        os.path.join(args.features_dir, TRAINING_FEAT_NPY),
-    )
-
     # Read in data
+    X_train_eeg1, _ = read_csv(os.path.join(args.data_dir, TRAINING_EEG1_DATA_CSV))
+    X_train_eeg2, _ = read_csv(os.path.join(args.data_dir, TRAINING_EEG2_DATA_CSV))
+    X_train_emg, _ = read_csv(os.path.join(args.data_dir, TRAINING_EMG_DATA_CSV))
+
+    if X_train_eeg1 is None or X_train_eeg2 is None or X_train_emg is None:
+        raise RuntimeError("There was a problem with reading the training data")
+
+    X_train = preprocess_data(X_train_eeg1, X_train_eeg2, X_train_emg)
+
+    # Read in labels
     Y_train, _ = read_csv(os.path.join(args.data_dir, TRAINING_LABELS_CSV))
     if Y_train is None:
         raise RuntimeError("There was a problem with reading CSV data")
@@ -160,10 +161,14 @@ def __main(args: Namespace) -> None:
         print(f"Micro-average F1 validation score is: {val_score:.4f}")
 
     elif args.mode == "final":
-        X_test = get_ecg_features(
-            os.path.join(args.data_dir, TEST_DATA_CSV),
-            os.path.join(args.features_dir, TEST_FEAT_NPY),
-        )
+        X_test_eeg1, _ = read_csv(os.path.join(args.data_dir, TEST_DATA_EEG1_CSV))
+        X_test_eeg2, _ = read_csv(os.path.join(args.data_dir, TEST_DATA_EEG2_CSV))
+        X_test_emg, _ = read_csv(os.path.join(args.data_dir, TEST_DATA_EMG_CSV))
+
+        if X_test_eeg1 is None or X_test_eeg2 is None or X_test_emg is None:
+            raise RuntimeError("There was a problem with reading the test data")
+
+        X_test = preprocess_data(X_test_eeg1, X_test_eeg2, X_test_emg)
 
         if args.select_features:
             X_test = X_test[:, selected]
@@ -189,94 +194,92 @@ def __main(args: Namespace) -> None:
         raise ValueError(f"Invalid mode: {args.mode}")
 
 
-def get_ecg_features(raw_path: str, transformed_path: str) -> np.ndarray:
-    """Get ECG features from the raw data or the saved transformed data."""
-    if os.path.exists(transformed_path):
-        print("Loading features from %s..." % transformed_path)
-        return np.load(transformed_path)
+def preprocess_data(eeg1: CSVData, eeg2: CSVData, emg: CSVData) -> CSVData:
+    """Preprocess time-series data representing waves by using Fast Fourier Transform."""
+    processed_data = fft(eeg1[:, 1:])
+    processed_data = np.stack([processed_data.real, processed_data.imag], 1)
 
-    raw_data, _ = read_csv(raw_path)
-    if raw_data is None:
-        raise RuntimeError("There was a problem with reading CSV data")
-    # Remove the IDs
-    raw_data = raw_data[:, 1:]
-
-    ecg_features = []
-    print("Transforming signal with biosppy...")
-
-    for x in tqdm(raw_data):
-        x = np.array([i for i in x if not np.isnan(i)])
-        extracted = ecg(x, sampling_rate=SAMPLING_RATE, show=False)
-        beats = fft(extracted["templates"])
-
-        # We don't use the given heart rate as it applies physiological limits
-        # (40 <= heart rate <= 200), and thus this may be empty. We also don't care about
-        # smoothing it, as we're using median and MAD anyway.
-        heart_rate = SAMPLING_RATE * (60.0 / np.diff(extracted["rpeaks"]))
-        # Duplicate last element so that heart_rate and beats are of same length
-        heart_rate = np.append(heart_rate, heart_rate[-1]).reshape(-1, 1)
-        ecg_features.append(np.hstack((np.real(beats), np.imag(beats), heart_rate)))
-
-    final_features = np.hstack(
-        (
-            extract_statistics(ecg_features),
-            extract_heartrate_tsfresh(ecg_features),
-        )
+    eeg2_fft = fft(eeg2[:, 1:])
+    processed_data = np.column_stack(
+        (processed_data, np.expand_dims(eeg2_fft.real, 1), np.expand_dims(eeg2_fft.imag, 1))
     )
 
-    np.save(transformed_path, final_features)
-    return final_features
+    emg_fft = fft(emg[:, 1:])
+    processed_data = np.column_stack(
+        (processed_data, np.expand_dims(emg_fft.real, 1), np.expand_dims(emg_fft.imag, 1))
+    )
+
+    processed_data -= processed_data.mean(axis=(0, 2), keepdims=True)
+    processed_data /= processed_data.std(axis=(0, 2), keepdims=True)
+
+    return processed_data
 
 
-def extract_heartrate_tsfresh(transformed: np.ndarray) -> np.ndarray:
-    """Extract all tsfresh features from heart rate."""
-    ecg_features = []
-    print("Extracting TSFRESH statistics from heart rate signals...")
+def choose_model(
+    name: str,
+    log_dir: str = "logs",
+    n_estimators: int = 100,
+    max_depth: int = 6,
+    xgb_lr: float = 0.3,
+    gamma_xgb: float = 0.0,
+    min_child_weight: float = 1.0,
+    subsample: float = 1.0,
+    colsample_bytree: float = 1.0,
+    reg_lambda: float = 1.0,
+    C: float = 1.0,
+    nn_wt: float = 1.0,
+    epochs: int = 50,
+    batch_size: int = 64,
+    nn_lr: float = 1e-3,
+    lr_step: int = 10000,
+    lr_decay: float = 0.75,
+    weight_decay: float = 1e-3,
+    balance_weights: bool = True,
+    **kwargs,
+) -> BaseClassifier:
+    """Choose a model given the name and hyper-parameters."""
+    xgb_model = XGBClassifier(
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        learning_rate=xgb_lr,
+        gamma=gamma_xgb,
+        min_child_weight=min_child_weight,
+        subsample=subsample,
+        colsample_bytree=colsample_bytree,
+        reg_lambda=reg_lambda,
+        random_state=0,
+    )
+    svm_model = SVC(C=C, class_weight="balanced", random_state=0)
+    random_forest_classifier = RandomForestClassifier()
 
-    for x in tqdm(transformed):
-        vchange_quantiles_abs = change_quantiles(x[:, -1], 0, 0.8, True, "var")
-        vfft_aggregated_k = list(fft_aggregated(x[:, -1], [{"aggtype": "kurtosis"}]))[0][1]
-        vmean_abs_change = mean_abs_change(x[:, -1])
-        vabsolute_sum_of_changes = absolute_sum_of_changes(x[:, -1])
-        vfft_aggregated_s = list(fft_aggregated(x[:, -1], [{"aggtype": "skew"}]))[0][1]
-        vfft_aggregated_c = list(fft_aggregated(x[:, -1], [{"aggtype": "centroid"}]))[0][1]
-        vvariance = variance(x[:, -1])
-        vvariation_coefficient = variation_coefficient(x[:, -1])
+    nn_model = NN(
+        epochs=epochs,
+        batch_size=batch_size,
+        log_dir=log_dir,
+        learning_rate=nn_lr,
+        lr_step=lr_step,
+        lr_decay=lr_decay,
+        weight_decay=weight_decay,
+        balance_weights=balance_weights,
+        random_state=0,
+    )
 
-        new_tsfresh = np.array(
-            [
-                vchange_quantiles_abs,
-                vfft_aggregated_k,
-                vmean_abs_change,
-                vabsolute_sum_of_changes,
-                vfft_aggregated_s,
-                vfft_aggregated_c,
-                vvariance,
-                vvariation_coefficient,
-            ]
+    if name == "xgb":
+        return xgb_model
+    elif name == "svm":
+        return svm_model
+    elif name == "ensemble":
+        model_wt = np.array([1.0, nn_wt])
+        model_wt /= sum(model_wt)
+        return VotingClassifier(
+            [("xgb", xgb_model), ("nn", nn_model)], voting="soft", weights=model_wt
         )
-
-        ecg_features.append(np.concatenate(new_tsfresh, axis=0))
-
-    return np.array(ecg_features)
-
-
-def extract_statistics(transformed: np.ndarray) -> np.ndarray:
-    """Extract median and deviation statistics from the transformed ECG signals."""
-    ecg_features = []
-    print("Extracting statistics from transformed signals...")
-
-    for x in tqdm(transformed):
-        median_temp = np.median(x[:, :-1], axis=0)
-        mad_temp = median_abs_deviation(x[:, :-1], axis=0)
-
-        median_hr = np.median(x[:, -1], keepdims=True)
-        mad_hr = median_abs_deviation(x[:, -1]).reshape([-1])
-
-        features = np.concatenate([median_temp, mad_temp, median_hr, mad_hr])
-        ecg_features.append(features)
-
-    return np.array(ecg_features)
+    elif name == "forest":
+        return random_forest_classifier
+    elif name == "nn":
+        return nn_model
+    else:
+        raise ValueError(f"Invalid model name: {name}")
 
 
 def objective(
@@ -358,94 +361,45 @@ def get_smote_fn(
     return smote_fn
 
 
-def choose_model(
-    name: str,
-    log_dir: str = "logs",
-    n_estimators: int = 100,
-    max_depth: int = 6,
-    xgb_lr: float = 0.3,
-    gamma_xgb: float = 0.0,
-    min_child_weight: float = 1.0,
-    subsample: float = 1.0,
-    colsample_bytree: float = 1.0,
-    reg_lambda: float = 1.0,
-    C: float = 1.0,
-    nn_wt: float = 1.0,
-    epochs: int = 50,
-    batch_size: int = 64,
-    nn_lr: float = 1e-3,
-    lr_step: int = 10000,
-    lr_decay: float = 0.75,
-    weight_decay: float = 1e-3,
-    balance_weights: bool = True,
-    **kwargs,
-) -> BaseClassifier:
-    """Choose a model given the name and hyper-parameters."""
-    xgb_model = XGBClassifier(
-        n_estimators=n_estimators,
-        max_depth=max_depth,
-        learning_rate=xgb_lr,
-        gamma=gamma_xgb,
-        min_child_weight=min_child_weight,
-        subsample=subsample,
-        colsample_bytree=colsample_bytree,
-        reg_lambda=reg_lambda,
-        random_state=0,
-    )
-    svm_model = SVC(C=C, class_weight="balanced", random_state=0)
-    random_forest_classifier = RandomForestClassifier()
+def extract_statistics(transformed: np.ndarray) -> np.ndarray:
+    """Extract median and deviation statistics from the transformed ECG signals."""
+    ecg_features = []
+    print("Extracting statistics from transformed signals...")
 
-    nn_model = NN(
-        epochs=epochs,
-        batch_size=batch_size,
-        log_dir=log_dir,
-        learning_rate=nn_lr,
-        lr_step=lr_step,
-        lr_decay=lr_decay,
-        weight_decay=weight_decay,
-        balance_weights=balance_weights,
-        random_state=0,
-    )
+    for x in tqdm(transformed):
+        median_temp = np.median(x[:, :-1], axis=0)
+        mad_temp = median_abs_deviation(x[:, :-1], axis=0)
 
-    if name == "xgb":
-        return xgb_model
-    elif name == "svm":
-        return svm_model
-    elif name == "ensemble":
-        model_wt = np.array([1.0, nn_wt])
-        model_wt /= sum(model_wt)
-        return VotingClassifier(
-            [("xgb", xgb_model), ("nn", nn_model)], voting="soft", weights=model_wt
-        )
-    elif name == "forest":
-        return random_forest_classifier
-    elif name == "nn":
-        return nn_model
-    else:
-        raise ValueError(f"Invalid model name: {name}")
+        median_hr = np.median(x[:, -1], keepdims=True)
+        mad_hr = median_abs_deviation(x[:, -1]).reshape([-1])
+
+        features = np.concatenate([median_temp, mad_temp, median_hr, mad_hr])
+        ecg_features.append(features)
+
+    return np.array(ecg_features)
 
 
 if __name__ == "__main__":
     parser = ArgumentParser(
-        description="The entry point for the scripts for Task 2",
+        description="The entry point for the scripts of Task 4",
         formatter_class=ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="data/task3",
+        default="data/task4",
         help="path to the directory containing the task data",
     )
     parser.add_argument(
         "--features-dir",
         type=str,
-        default="config/task3/",
+        default="config/task4/",
         help="where the extracted features are stored or should be stored",
     )
     parser.add_argument(
         "--log-dir",
         type=str,
-        default="logs/task3",
+        default="logs/task4",
         help="path to the directory where to dump logs",
     )
     parser.add_argument("--smote", action="store_true", help="use SMOTE")
@@ -463,7 +417,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config",
         type=str,
-        default="config/task3.yaml",
+        default="config/task4.yaml",
         help="the path to the YAML config for the hyper-parameters",
     )
     parser.add_argument(
@@ -475,7 +429,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--selected-features-path",
         type=str,
-        default="config/features-task3.txt",
+        default="config/features-task4.txt",
         help="where the most optimal features are stored",
     )
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
@@ -508,7 +462,7 @@ if __name__ == "__main__":
     final_parser.add_argument(
         "--output",
         type=str,
-        default="dist/submission3.csv",
+        default="dist/submission4.csv",
         help="the path by which to save the output CSV",
     )
     parser.add_argument("--visual", action="store_true", help="enable model visualizations")

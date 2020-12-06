@@ -29,69 +29,6 @@ from utilities.data import create_submission_file
 SamplerFnType = Optional[Callable[[CSVData], BaseSampler]]
 
 
-def evaluate_model_balanced_ensemble(
-    model: BaseEstimator,
-    X_train: CSVData,
-    Y_train: CSVData,
-    k: int,
-) -> float:
-    """Perform cross-validation on the given dataset using ensembling to counteract class imbalance.
-
-    Parameters
-    ----------
-    model: The model
-    X_train: The training data
-    Y_train: The training labels
-    k: The number of folds in k-fold cross-validation
-
-    Returns
-    -------
-    The validation score
-    """
-    w_accuracies = []
-    nr_of_classes = len(np.unique(Y_train))
-    majority_class = max(set(Y_train), key=list(Y_train).count)
-
-    kf = StratifiedKFold(n_splits=k, shuffle=True, random_state=0)
-    for train_index, test_index in kf.split(X_train, Y_train):
-        X_train_cv, X_test_cv = X_train[train_index], X_train[test_index]
-        Y_train_cv, Y_test_cv = Y_train[train_index], Y_train[test_index]
-
-        X_majority_class = np.array(
-            [X_train_cv[i] for i in range(len(Y_train_cv)) if Y_train_cv[i] == majority_class]
-        )
-        Y_majority_class = np.array(
-            [Y_train_cv[i] for i in range(len(Y_train_cv)) if Y_train_cv[i] == majority_class]
-        )
-
-        X_minority_class = [
-            X_train_cv[i] for i in range(len(Y_train_cv)) if Y_train_cv[i] != majority_class
-        ]
-        Y_minority_class = [
-            Y_train_cv[i] for i in range(len(Y_train_cv)) if Y_train_cv[i] != majority_class
-        ]
-
-        preds = []
-        for k in range(int(len(X_majority_class) / len(X_minority_class) * (nr_of_classes - 1))):
-            indices = sample_without_replacement(
-                n_population=len(X_majority_class), n_samples=len(X_minority_class)
-            )
-
-            X_train_final = [*X_majority_class[indices], *X_minority_class]
-
-            Y_train_final = [*Y_majority_class[indices], *Y_minority_class]
-
-            model.fit(X_train_final, Y_train_final)
-            preds.append(model.predict(X_test_cv))
-
-        # Take majority vote
-        majority_votes = [max(set(votes), key=votes.count) for votes in zip(*preds)]
-        w_accuracies.append(balanced_accuracy_score(Y_test_cv, majority_votes))
-
-    # Return average balanced accuracy
-    return sum(w_accuracies) / len(w_accuracies)
-
-
 def evaluate_model(
     model: BaseEstimator,
     X_train: CSVData,
@@ -159,6 +96,69 @@ def evaluate_model(
             return train_score, val_score
 
     return train_score / k, val_score / k
+
+
+def evaluate_model_balanced_ensemble(
+    model: BaseEstimator,
+    X_train: CSVData,
+    Y_train: CSVData,
+    k: int,
+) -> float:
+    """Perform cross-validation on the given dataset using ensembling to counteract class imbalance.
+
+    Parameters
+    ----------
+    model: The model
+    X_train: The training data
+    Y_train: The training labels
+    k: The number of folds in k-fold cross-validation
+
+    Returns
+    -------
+    The validation score
+    """
+    w_accuracies = []
+    nr_of_classes = len(np.unique(Y_train))
+    majority_class = max(set(Y_train), key=list(Y_train).count)
+
+    kf = StratifiedKFold(n_splits=k, shuffle=True, random_state=0)
+    for train_index, test_index in kf.split(X_train, Y_train):
+        X_train_cv, X_test_cv = X_train[train_index], X_train[test_index]
+        Y_train_cv, Y_test_cv = Y_train[train_index], Y_train[test_index]
+
+        X_majority_class = np.array(
+            [X_train_cv[i] for i in range(len(Y_train_cv)) if Y_train_cv[i] == majority_class]
+        )
+        Y_majority_class = np.array(
+            [Y_train_cv[i] for i in range(len(Y_train_cv)) if Y_train_cv[i] == majority_class]
+        )
+
+        X_minority_class = [
+            X_train_cv[i] for i in range(len(Y_train_cv)) if Y_train_cv[i] != majority_class
+        ]
+        Y_minority_class = [
+            Y_train_cv[i] for i in range(len(Y_train_cv)) if Y_train_cv[i] != majority_class
+        ]
+
+        preds = []
+        for k in range(int(len(X_majority_class) / len(X_minority_class) * (nr_of_classes - 1))):
+            indices = sample_without_replacement(
+                n_population=len(X_majority_class), n_samples=len(X_minority_class)
+            )
+
+            X_train_final = [*X_majority_class[indices], *X_minority_class]
+
+            Y_train_final = [*Y_majority_class[indices], *Y_minority_class]
+
+            model.fit(X_train_final, Y_train_final)
+            preds.append(model.predict(X_test_cv))
+
+        # Take majority vote
+        majority_votes = [max(set(votes), key=votes.count) for votes in zip(*preds)]
+        w_accuracies.append(balanced_accuracy_score(Y_test_cv, majority_votes))
+
+    # Return average balanced accuracy
+    return sum(w_accuracies) / len(w_accuracies)
 
 
 def finalize_model(
