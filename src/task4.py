@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""The entry point for the scripts for Task 3."""
+"""The entry point for the scripts for Task 4."""
 import os
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from typing import Any, Dict, List, Optional, Union
