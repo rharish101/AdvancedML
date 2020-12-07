@@ -83,6 +83,8 @@ def __main(args: Namespace) -> None:
         raise RuntimeError("There was a problem with reading the training data")
 
     X_train = preprocess_data(X_train_eeg1, X_train_eeg2, X_train_emg)
+    if args.model != "nn":
+        X_train = X_train.reshape(X_train.shape[0], -1)
 
     # Read in labels
     Y_train, _ = read_csv(os.path.join(args.data_dir, TRAINING_LABELS_CSV))
@@ -169,7 +171,8 @@ def __main(args: Namespace) -> None:
             raise RuntimeError("There was a problem with reading the test data")
 
         X_test = preprocess_data(X_test_eeg1, X_test_eeg2, X_test_emg)
-
+        if args.model != "nn":
+            X_test = X_test.reshape(X_test.shape[0], -1)
         if args.select_features:
             X_test = X_test[:, selected]
 
