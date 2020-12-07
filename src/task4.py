@@ -22,17 +22,13 @@ from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
 from utilities.model import evaluate_model, feature_selection, finalize_model, visualize_model
 
-TRAINING_EEG1_DATA_CSV: Final = "train_eeg1.csv"
-TRAINING_EEG2_DATA_CSV: Final = "train_eeg2.csv"
-TRAINING_EMG_DATA_CSV: Final = "train_emg.csv"
+# Suffixes will be prefixed with either "train" or "test"
+SUFFIX_EEG1_DATA_CSV: Final = "_eeg1.csv"
+SUFFIX_EEG2_DATA_CSV: Final = "_eeg2.csv"
+SUFFIX_EMG_DATA_CSV: Final = "_emg.csv"
+SUFFIX_FEAT_NPY: Final = "-features.npy"
+
 TRAINING_LABELS_CSV: Final = "train_labels.csv"
-
-TEST_DATA_EEG1_CSV: Final = "test_eeg1.csv"
-TEST_DATA_EEG2_CSV: Final = "test_eeg2.csv"
-TEST_DATA_EMG_CSV: Final = "test_emg.csv"
-
-TRAINING_FEAT_NPY: Final = "train-features.npy"
-TEST_FEAT_NPY: Final = "test-features.npy"
 
 # Search distributions for hyper-parameters
 XGB_SPACE: Final = {
@@ -74,15 +70,7 @@ def __main(args: Namespace) -> None:
     if not os.path.exists(args.features_dir):
         os.makedirs(args.features_dir)
 
-    # Read in data
-    X_train_eeg1, _ = read_csv(os.path.join(args.data_dir, TRAINING_EEG1_DATA_CSV))
-    X_train_eeg2, _ = read_csv(os.path.join(args.data_dir, TRAINING_EEG2_DATA_CSV))
-    X_train_emg, _ = read_csv(os.path.join(args.data_dir, TRAINING_EMG_DATA_CSV))
-
-    if X_train_eeg1 is None or X_train_eeg2 is None or X_train_emg is None:
-        raise RuntimeError("There was a problem with reading the training data")
-
-    X_train = preprocess_data(X_train_eeg1, X_train_eeg2, X_train_emg)
+    X_train = get_data(args.data_dir, args.features_dir, "train")
     if args.model != "nn":
         X_train = X_train.reshape(X_train.shape[0], -1)
 
@@ -163,14 +151,7 @@ def __main(args: Namespace) -> None:
         print(f"Micro-average F1 validation score is: {val_score:.4f}")
 
     elif args.mode == "final":
-        X_test_eeg1, _ = read_csv(os.path.join(args.data_dir, TEST_DATA_EEG1_CSV))
-        X_test_eeg2, _ = read_csv(os.path.join(args.data_dir, TEST_DATA_EEG2_CSV))
-        X_test_emg, _ = read_csv(os.path.join(args.data_dir, TEST_DATA_EMG_CSV))
-
-        if X_test_eeg1 is None or X_test_eeg2 is None or X_test_emg is None:
-            raise RuntimeError("There was a problem with reading the test data")
-
-        X_test = preprocess_data(X_test_eeg1, X_test_eeg2, X_test_emg)
+        X_test = get_data(args.data_dir, args.features_dir, "test")
         if args.model != "nn":
             X_test = X_test.reshape(X_test.shape[0], -1)
         if args.select_features:
@@ -197,8 +178,24 @@ def __main(args: Namespace) -> None:
         raise ValueError(f"Invalid mode: {args.mode}")
 
 
-def preprocess_data(eeg1: CSVData, eeg2: CSVData, emg: CSVData) -> CSVData:
-    """Preprocess time-series data representing waves by using Fast Fourier Transform."""
+def get_data(data_dir: str, features_dir: str, mode: str) -> CSVData:
+    """Get the time-series data representing waves preprocessed using Fast Fourier Transform."""
+    if mode not in {"train", "test"}:
+        raise ValueError(f"Invalid mode: {mode}")
+
+    features_path = os.path.join(features_dir, mode + SUFFIX_FEAT_NPY)
+    if os.path.exists(features_path):
+        print(f'Loading {mode} features from "{features_path}"')
+        return np.load(features_path)
+
+    # Read in data
+    eeg1, _ = read_csv(os.path.join(data_dir, mode + SUFFIX_EEG1_DATA_CSV))
+    eeg2, _ = read_csv(os.path.join(data_dir, mode + SUFFIX_EEG2_DATA_CSV))
+    emg, _ = read_csv(os.path.join(data_dir, mode + SUFFIX_EMG_DATA_CSV))
+
+    if eeg1 is None or eeg2 is None or emg is None:
+        raise RuntimeError(f"There was a problem with reading the {mode} data")
+
     processed_data = fft(eeg1[:, 1:])
     processed_data = np.stack([processed_data.real, processed_data.imag], 1)
 
@@ -215,6 +212,7 @@ def preprocess_data(eeg1: CSVData, eeg2: CSVData, emg: CSVData) -> CSVData:
     processed_data -= processed_data.mean(axis=(0, 2), keepdims=True)
     processed_data /= processed_data.std(axis=(0, 2), keepdims=True)
 
+    np.save(features_path, processed_data)
     return processed_data
 
 
