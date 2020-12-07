@@ -17,7 +17,7 @@ from tqdm import tqdm
 from typing_extensions import Final
 from xgboost import XGBClassifier
 
-from models.task3_nn import NN
+from models.task4_nn import NN
 from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
 from utilities.model import evaluate_model, feature_selection, finalize_model, visualize_model
@@ -234,7 +234,7 @@ def choose_model(
     lr_step: int = 10000,
     lr_decay: float = 0.75,
     weight_decay: float = 1e-3,
-    balance_weights: bool = True,
+    balance_weights: bool = False,
     **kwargs,
 ) -> BaseClassifier:
     """Choose a model given the name and hyper-parameters."""
