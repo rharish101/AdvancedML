@@ -20,7 +20,7 @@ from xgboost import XGBClassifier
 from models.task4_nn import NN
 from typings import BaseClassifier, CSVData
 from utilities.data import read_csv
-from utilities.model import evaluate_model, feature_selection, finalize_model, visualize_model
+from utilities.model import evaluate_model_task4, feature_selection, finalize_model, visualize_model
 
 # Suffixes will be prefixed with either "train" or "test"
 SUFFIX_EEG1_DATA_CSV: Final = "_eeg1.csv"
@@ -136,11 +136,11 @@ def __main(args: Namespace) -> None:
     )
 
     if args.mode == "eval":
-        train_score, val_score = evaluate_model(
+        train_score, val_score = evaluate_model_task4(
             model,
             X_train,
             Y_train,
-            k=args.cross_val,
+            k=3,
             smote_fn=smote_fn,
             outlier_detection=outlier_detection,
             single=args.single,
@@ -302,11 +302,11 @@ def objective(
         )
 
         # Keep k low for faster evaluation
-        score = evaluate_model(
+        score = evaluate_model_task4(
             model,
             X_train,
             Y_train,
-            k=5,
+            k=3,
             smote_fn=smote_fn,
             outlier_detection=outlier_detection,
         )

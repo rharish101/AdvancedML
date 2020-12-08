@@ -28,6 +28,79 @@ from utilities.data import create_submission_file
 
 SamplerFnType = Optional[Callable[[CSVData], BaseSampler]]
 
+def evaluate_model_task4(
+    model: BaseEstimator,
+    X_train: CSVData,
+    Y_train: CSVData,
+    k: int,
+    smote_fn: SamplerFnType = None,
+    outlier_detection: Any = None,
+    single: bool = False,
+    visualize: bool = False,
+) -> Tuple[float, float]:
+    """Perform cross-validation on the given dataset and return the R^2 score.
+
+    Parameters
+    ----------
+    model: The model
+    X_train: The training data
+    Y_train: The training labels
+    k: The number of folds in k-fold cross-validation (i.e. the number of subjects)
+    smote_fn: The function that takes labels and returns SMOTE
+    single: Whether to evaluate only on a single fold (ie standard cross-validation)
+
+    Returns
+    -------
+    The training score
+    The validation score
+    """
+
+    train_score = 0
+    val_score = 0
+
+    X_train = np.vstack([np.split(X_train, k)])
+    Y_train = np.vstack([np.split(Y_train, k)])
+
+    for test_index in range(k):
+        X_train_cv, X_test_cv = np.concatenate((X_train[(test_index + 1) % k], X_train[(test_index + 2) % k])), X_train[test_index]
+        Y_train_cv, Y_test_cv = np.concatenate((Y_train[(test_index + 1) % k], Y_train[(test_index + 2) % k])), Y_train[test_index]
+
+        print(X_train_cv.shape)
+        print(X_test_cv.shape)
+
+        if outlier_detection is not None:
+            outliers = outlier_detection.fit_predict(X_train_cv)
+            X_train_cv = X_train_cv[outliers == 1]
+            Y_train_cv = Y_train_cv[outliers == 1]
+
+        if smote_fn:
+            smote = smote_fn(Y_train_cv)
+            X_train_cv, Y_train_cv = smote.fit_resample(X_train_cv, Y_train_cv)
+
+        try:
+            model.fit(X_train_cv, Y_train_cv)
+        except KeyboardInterrupt:
+            pass
+
+        train_pred = model.predict(X_train_cv)
+        train_score += f1_score(Y_train_cv, train_pred, average="micro")
+
+        test_pred = model.predict(X_test_cv)
+        val_score += f1_score(Y_test_cv, test_pred, average="micro")
+
+        if visualize:
+            print(f"\nComputing training statistics for fold {fold_index + 1}/{k} ...")
+            create_visualization(model, X_train_cv, Y_train_cv, "Training Metrics")
+
+            print(f"\nComputing validation statistics for fold {fold_index + 1}/{k} ...")
+            create_visualization(model, X_test_cv, Y_test_cv, "Validation Metrics")
+
+            plt.show()
+
+        if single:
+            return train_score, val_score
+
+    return train_score / k, val_score / k
 
 def evaluate_model(
     model: BaseEstimator,
