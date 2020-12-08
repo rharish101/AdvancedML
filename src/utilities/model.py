@@ -65,9 +65,6 @@ def evaluate_model_task4(
         X_train_cv, X_test_cv = np.concatenate((X_train[(test_index + 1) % k], X_train[(test_index + 2) % k])), X_train[test_index]
         Y_train_cv, Y_test_cv = np.concatenate((Y_train[(test_index + 1) % k], Y_train[(test_index + 2) % k])), Y_train[test_index]
 
-        print(X_train_cv.shape)
-        print(X_test_cv.shape)
-
         if outlier_detection is not None:
             outliers = outlier_detection.fit_predict(X_train_cv)
             X_train_cv = X_train_cv[outliers == 1]
