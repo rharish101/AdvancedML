@@ -169,6 +169,8 @@ def __main(args: Namespace) -> None:
             args.output,
             smote_fn=smote_fn,
             outlier_detection=outlier_detection,
+            header=("Id", "y"),
+            export_int=True,  # save space, as default is too big to upload
         )
 
         if args.visual:

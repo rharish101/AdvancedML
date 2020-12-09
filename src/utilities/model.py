@@ -28,6 +28,7 @@ from utilities.data import create_submission_file
 
 SamplerFnType = Optional[Callable[[CSVData], BaseSampler]]
 
+
 def evaluate_model_task4(
     model: BaseEstimator,
     X_train: CSVData,
@@ -54,7 +55,6 @@ def evaluate_model_task4(
     The training score
     The validation score
     """
-
     train_score = 0
     val_score = 0
 
@@ -62,8 +62,14 @@ def evaluate_model_task4(
     Y_train = np.vstack([np.split(Y_train, k)])
 
     for test_index in range(k):
-        X_train_cv, X_test_cv = np.concatenate((X_train[(test_index + 1) % k], X_train[(test_index + 2) % k])), X_train[test_index]
-        Y_train_cv, Y_test_cv = np.concatenate((Y_train[(test_index + 1) % k], Y_train[(test_index + 2) % k])), Y_train[test_index]
+        X_train_cv, X_test_cv = (
+            np.concatenate((X_train[(test_index + 1) % k], X_train[(test_index + 2) % k])),
+            X_train[test_index],
+        )
+        Y_train_cv, Y_test_cv = (
+            np.concatenate((Y_train[(test_index + 1) % k], Y_train[(test_index + 2) % k])),
+            Y_train[test_index],
+        )
 
         if outlier_detection is not None:
             outliers = outlier_detection.fit_predict(X_train_cv)
@@ -86,18 +92,15 @@ def evaluate_model_task4(
         val_score += f1_score(Y_test_cv, test_pred, average="micro")
 
         if visualize:
-            print(f"\nComputing training statistics for fold {fold_index + 1}/{k} ...")
             create_visualization(model, X_train_cv, Y_train_cv, "Training Metrics")
-
-            print(f"\nComputing validation statistics for fold {fold_index + 1}/{k} ...")
             create_visualization(model, X_test_cv, Y_test_cv, "Validation Metrics")
-
             plt.show()
 
         if single:
             return train_score, val_score
 
     return train_score / k, val_score / k
+
 
 def evaluate_model(
     model: BaseEstimator,
@@ -240,6 +243,8 @@ def finalize_model(
     output: str,
     smote_fn: SamplerFnType = None,
     outlier_detection: Any = None,
+    header: Tuple[str, str] = ("id", "y"),
+    export_int: bool = False,
 ) -> None:
     """Train the model on the complete data and generate the submission file.
 
@@ -252,6 +257,7 @@ def finalize_model(
     test_ids: The IDs for the test data
     output: The path where to dump the output
     smote_fn: The function that takes labels and returns SMOTE
+    export_int: Whether to export the CSV as integers
     """
     print("Training model...")
 
@@ -269,7 +275,7 @@ def finalize_model(
     print("Model trained")
     Y_pred = model.predict(X_test)
     submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
-    create_submission_file(output, submission, header=("id", "y"))
+    create_submission_file(output, submission, header=header, export_int=export_int)
 
 
 def finalize_model_balanced_ensemble(

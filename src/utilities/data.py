@@ -101,6 +101,7 @@ def create_submission_file(
     data: CSVData,
     header: CSVHeader = ("id", "y"),
     delimiter: str = ",",
+    export_int: bool = False,
 ) -> None:
     """Create a submission file in CSV format.
 
@@ -114,12 +115,20 @@ def create_submission_file(
         Defaults to ('Id', 'y').
 
     delimiter (str, optional): The character between values in a row of CSV data. Defaults to ','.
+
+    export_int: Whether to export the CSV as integers. Defaults to False.
     """
     Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+
+    if export_int:
+        fmt = "%d"
+    else:
+        fmt = "%.18e"
 
     np.savetxt(
         file_path,
         data,
+        fmt=fmt,
         delimiter=delimiter,
         header=str.join(",", header),
         comments="",
