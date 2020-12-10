@@ -9,11 +9,9 @@ import yaml
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
 from imblearn.over_sampling import RandomOverSampler
 from scipy.fft import fft
-from scipy.stats import median_abs_deviation
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import SVC
-from tqdm import tqdm
 from typing_extensions import Final
 from xgboost import XGBClassifier
 
@@ -62,8 +60,6 @@ ISOLATION_SPACE: Final = {
     "contamination": hp.quniform("contamination", 0.05, 0.5, 0.05),
 }
 OUTLIER_SPACE: Final = {"loc": LOC_SPACE, "isolation": ISOLATION_SPACE}
-
-SAMPLING_RATE: Final = 300.0
 
 
 def __main(args: Namespace) -> None:
@@ -364,24 +360,6 @@ def get_smote_fn(
         return RandomOverSampler(sampling_strategy=sampling_strategy_full, random_state=0)
 
     return smote_fn
-
-
-def extract_statistics(transformed: np.ndarray) -> np.ndarray:
-    """Extract median and deviation statistics from the transformed ECG signals."""
-    ecg_features = []
-    print("Extracting statistics from transformed signals...")
-
-    for x in tqdm(transformed):
-        median_temp = np.median(x[:, :-1], axis=0)
-        mad_temp = median_abs_deviation(x[:, :-1], axis=0)
-
-        median_hr = np.median(x[:, -1], keepdims=True)
-        mad_hr = median_abs_deviation(x[:, -1]).reshape([-1])
-
-        features = np.concatenate([median_temp, mad_temp, median_hr, mad_hr])
-        ecg_features.append(features)
-
-    return np.array(ecg_features)
 
 
 if __name__ == "__main__":
