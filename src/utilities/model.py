@@ -244,6 +244,7 @@ def finalize_model(
     smote_fn: SamplerFnType = None,
     outlier_detection: Any = None,
     header: Tuple[str, str] = ("id", "y"),
+    label_indexing: int = 0,
     export_int: bool = False,
 ) -> None:
     """Train the model on the complete data and generate the submission file.
@@ -257,6 +258,7 @@ def finalize_model(
     test_ids: The IDs for the test data
     output: The path where to dump the output
     smote_fn: The function that takes labels and returns SMOTE
+    label_indexing: What to start indexing the label from
     export_int: Whether to export the CSV as integers
     """
     print("Training model...")
@@ -273,7 +275,7 @@ def finalize_model(
     model.fit(X_train, Y_train)
 
     print("Model trained")
-    Y_pred = model.predict(X_test)
+    Y_pred = model.predict(X_test) + label_indexing
     submission: Any = np.stack([test_ids, Y_pred], 1)  # Add IDs
     create_submission_file(output, submission, header=header, export_int=export_int)
 

@@ -78,8 +78,9 @@ def __main(args: Namespace) -> None:
     Y_train, _ = read_csv(os.path.join(args.data_dir, TRAINING_LABELS_CSV))
     if Y_train is None:
         raise RuntimeError("There was a problem with reading CSV data")
-    # Remove training IDs, as they are in sorted order for training data
-    Y_train = Y_train[:, 1]
+    # Remove training IDs, as they are in sorted order for training data.
+    # Also make classes start from 0, as they start from 1.
+    Y_train = Y_train[:, 1] - 1
 
     # Load hyper-parameters, if a config exists
     with open(args.config, "r") as conf_file:
@@ -170,6 +171,7 @@ def __main(args: Namespace) -> None:
             smote_fn=smote_fn,
             outlier_detection=outlier_detection,
             header=("Id", "y"),
+            label_indexing=1,
             export_int=True,  # save space, as default is too big to upload
         )
 
