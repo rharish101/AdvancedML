@@ -2,7 +2,7 @@
 """The entry point for the scripts for Task 4."""
 import os
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import yaml
@@ -11,12 +11,13 @@ from imblearn.over_sampling import RandomOverSampler
 from scipy.fft import fft
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
 from sklearn.neighbors import LocalOutlierFactor
+from sklearn.preprocessing import RobustScaler
 from sklearn.svm import SVC
 from typing_extensions import Final
 from xgboost import XGBClassifier
 
 from models.task4_nn import NN
-from typings import BaseClassifier, CSVData
+from typings import BaseClassifier, BaseTransformer, CSVData
 from utilities.data import read_csv
 from utilities.model import evaluate_model_task4, feature_selection, finalize_model, visualize_model
 
@@ -62,11 +63,63 @@ ISOLATION_SPACE: Final = {
 OUTLIER_SPACE: Final = {"loc": LOC_SPACE, "isolation": ISOLATION_SPACE}
 
 
+class TemporalScaler(BaseTransformer):
+    """Scaler for robust scaling of 3D data with a temporal axis."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        """Initialize the robust scaler."""
+        self._scaler = RobustScaler(*args, **kwargs)
+
+    @staticmethod
+    def _flatten(X: np.ndarray) -> np.ndarray:
+        """Reshape 3D inputs to 2D.
+
+        Parameters
+        ----------
+        X: The 3D array in NxCxL form
+
+        Returns
+        -------
+        The 2D array in (N*L)xC form
+        """
+        X = np.swapaxes(X, 1, 2)  # NxCxL => NxLxC
+        return X.reshape(-1, X.shape[2])  # NxLxC => (N*L)xC
+
+    @staticmethod
+    def _unflatten(X: np.ndarray, orig_shape: Tuple[int, ...]) -> np.ndarray:
+        """Reshape 2D inputs to 3D.
+
+        Parameters
+        ----------
+        X: The 2D array in (N*L)xC form
+        orig_shape: The original NxCxL shape
+
+        Returns
+        -------
+        The 3D array in NxCxL form
+        """
+        X = X.reshape(-1, orig_shape[2], X.shape[1])  # (N*L)xC => NxLxC
+        return np.swapaxes(X, 1, 2)  # NxLxC => NxCxL
+
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> BaseTransformer:
+        """Wrap fit for robust scaling."""
+        self._scaler = self._scaler.fit(self._flatten(X), y)
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        """Wrap transform for robust scaling."""
+        return self._unflatten(self._scaler.transform(self._flatten(X)), X.shape)
+
+
 def __main(args: Namespace) -> None:
     if not os.path.exists(args.features_dir):
         os.makedirs(args.features_dir)
 
     X_train = get_data(args.data_dir, args.features_dir, "train")
+
+    scaler = TemporalScaler()
+    X_train = scaler.fit_transform(X_train)
+
     if args.model != "nn":
         X_train = X_train.reshape(X_train.shape[0], -1)
 
@@ -149,6 +202,7 @@ def __main(args: Namespace) -> None:
 
     elif args.mode == "final":
         X_test = get_data(args.data_dir, args.features_dir, "test")
+        X_test = scaler.transform(X_test)
         if args.model != "nn":
             X_test = X_test.reshape(X_test.shape[0], -1)
         if args.select_features:
@@ -208,9 +262,6 @@ def get_data(data_dir: str, features_dir: str, mode: str) -> CSVData:
     processed_data = np.column_stack(
         (processed_data, np.expand_dims(emg_fft.real, 1), np.expand_dims(emg_fft.imag, 1))
     )
-
-    processed_data -= processed_data.mean(axis=(0, 2), keepdims=True)
-    processed_data /= processed_data.std(axis=(0, 2), keepdims=True)
 
     np.save(features_path, processed_data)
     return processed_data
