@@ -1,0 +1,4 @@
+epochs: 4
+weight_decay: 0.001
+lr_step: 1000
+log_steps: 20
