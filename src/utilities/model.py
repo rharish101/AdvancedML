@@ -63,11 +63,11 @@ def evaluate_model_task4(
 
     for test_index in range(k):
         X_train_cv, X_test_cv = (
-            np.concatenate((X_train[(test_index + 1) % k], X_train[(test_index + 2) % k])),
+            np.concatenate(([X_train[(test_index + i) % k] for i in range(1, k)])),
             X_train[test_index],
         )
         Y_train_cv, Y_test_cv = (
-            np.concatenate((Y_train[(test_index + 1) % k], Y_train[(test_index + 2) % k])),
+            np.concatenate(([Y_train[(test_index + i) % k] for i in range(1, k)])),
             Y_train[test_index],
         )
 
