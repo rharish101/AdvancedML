@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from torch import Tensor
 from torch.nn import (
+    ELU,
     BatchNorm1d,
     Conv1d,
     CrossEntropyLoss,
@@ -15,7 +16,6 @@ from torch.nn import (
     Linear,
     MaxPool1d,
     Module,
-    ReLU,
     Sequential,
     Softmax,
 )
@@ -34,12 +34,12 @@ class ResidualBlock(Module):
         * Dropout
         * Conv
         * BatchNorm
-        * ReLU
+        * ELU
         * Dropout
         * Conv
         * Skip connection
         * BatchNorm
-        * ReLU
+        * ELU
         * MaxPool
     """
 
@@ -51,13 +51,13 @@ class ResidualBlock(Module):
             Dropout(dropout),
             Conv1d(channels, channels, kernel_size=kernel_size, bias=False, padding=padding),
             BatchNorm1d(channels),
-            ReLU(),
+            ELU(),
             Dropout(dropout),
             Conv1d(channels, channels, kernel_size=kernel_size, bias=False, padding=padding),
         )
         self.after = Sequential(
             BatchNorm1d(channels),
-            ReLU(),
+            ELU(),
             MaxPool1d(kernel_size=kernel_size, stride=stride, padding=padding),
         )
 
@@ -118,10 +118,13 @@ class NN(BaseClassifier):
             ResidualBlock(64),  # 256 => 128
             ResidualBlock(64),  # 128 => 64
             ResidualBlock(64),  # 64 => 32
-            ResidualBlock(64),  # 32 => 16
             Flatten(),
             Dropout(0.3),
-            Linear(64 * 16, num_classes),
+            Linear(64 * 32, 64, bias=False),
+            BatchNorm1d(64),
+            ELU(),
+            Dropout(0.3),
+            Linear(64, num_classes),
         ).to(self.device)
 
     @staticmethod
