@@ -174,9 +174,8 @@ class NN(BaseClassifier):
 
         class_weights: Optional[Tensor] = None
         if self.balance_weights:
-            class_weights = torch.from_numpy((1 / class_count).astype(np.float32)).to(self.device)
-            # Normalize weights such that equal class frequencies imply 1:1:1 ratio
-            class_weights /= class_weights.min()
+            class_weights_np = len(X) / (num_classes * class_count)
+            class_weights = torch.from_numpy(class_weights_np.astype(np.float32)).to(self.device)
 
         loss_func = CrossEntropyLoss(class_weights)
         optim = Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
