@@ -7,17 +7,17 @@ import numpy as np
 import torch
 from torch import Tensor
 from torch.nn import (
-    ELU,
+    AvgPool1d,
     BatchNorm1d,
     Conv1d,
     CrossEntropyLoss,
     Dropout,
-    Flatten,
     Linear,
-    MaxPool1d,
     Module,
+    ReLU,
     Sequential,
     Softmax,
+    TransformerEncoderLayer,
 )
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
@@ -27,43 +27,96 @@ from tqdm import tqdm
 from typings import BaseClassifier, CSVData
 
 
-class ResidualBlock(Module):
-    """Layer for residual block.
+class WindowBlock(Module):
+    """Block for the window feature learning.
 
     The block consists of:
-        * Dropout
-        * Conv
-        * BatchNorm
-        * ELU
-        * Dropout
-        * Conv
-        * Skip connection
-        * BatchNorm
-        * ELU
-        * MaxPool
+        * (Conv + BatchNorm + ReLU) x5
+        * AvgPool
     """
 
-    def __init__(self, channels: int, kernel_size: int = 5, stride: int = 2, dropout: float = 0.1):
+    def __init__(self, in_channels: int):
         """Initialize the layers."""
         super().__init__()
-        padding = (kernel_size - 1) // 2
-        self.before = Sequential(
-            Dropout(dropout),
-            Conv1d(channels, channels, kernel_size=kernel_size, bias=False, padding=padding),
-            BatchNorm1d(channels),
-            ELU(),
-            Dropout(dropout),
-            Conv1d(channels, channels, kernel_size=kernel_size, bias=False, padding=padding),
+        self.layers = Sequential(
+            self._get_conv_block(in_channels, 64, kernel_size=5),  # 512 => 256
+            self._get_conv_block(64, 64, kernel_size=5),  # 256 => 128
+            self._get_conv_block(64, 128),  # 128 => 64
+            self._get_conv_block(128, 128, stride=1),  # 64 => 64
+            self._get_conv_block(128, 256, stride=1),  # 64 => 64
+            AvgPool1d(kernel_size=2),  # 64 => 32
         )
-        self.after = Sequential(
-            BatchNorm1d(channels),
-            ELU(),
-            MaxPool1d(kernel_size=kernel_size, stride=stride, padding=padding),
+
+    @staticmethod
+    def _get_conv_block(in_channels: int, out_channels: int, kernel_size: int = 3, stride: int = 2):
+        padding = (kernel_size - 1) // 2
+        return Sequential(
+            Conv1d(
+                in_channels,
+                out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                bias=False,
+                padding=padding,
+            ),
+            BatchNorm1d(out_channels),
+            ReLU(),
         )
 
     def forward(self, x: Tensor) -> Tensor:
         """Return the output."""
-        return self.after(self.before(x) + x)
+        # NxCxL => LxNxC
+        return self.layers(x).movedim(2, 0)
+
+
+class PositionalEncoding(Module):
+    """Positional encoding layer.
+
+    This is taken from:
+    https://pytorch.org/tutorials/beginner/transformer_tutorial.html#define-the-model
+    """
+
+    def __init__(self, d_model, dropout=0.1, max_len=32):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer("pe", pe)
+
+    def forward(self, x):
+        """Return the output."""
+        x = x + self.pe[: x.size(0), :]
+        return self.dropout(x)
+
+
+class EpochBlock(Module):
+    """Block for intra/inter-epoch feature learning.
+
+    The block consists of:
+        * PositionalEmbedding
+        * TransformerEncoderLayer x2
+        * GlobalAvgPool
+    """
+
+    def __init__(self, channels: int):
+        """Initialize the layers."""
+        super().__init__()
+        self.pos_encoder = PositionalEncoding(channels)
+        self.attention_1 = TransformerEncoderLayer(channels, 1, dim_feedforward=channels)
+        self.attention_2 = TransformerEncoderLayer(channels, 1, dim_feedforward=channels)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Return the output."""
+        x = self.pos_encoder(x)
+        x = self.attention_1(x)
+        x = self.attention_2(x)
+        x = x.mean(0)  # GlobalAvgPool
+        return x
 
 
 class NN(BaseClassifier):
@@ -109,22 +162,15 @@ class NN(BaseClassifier):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def _init_model(self, in_channels, num_classes: int) -> None:
+    def _init_model(self, in_channels: int, num_classes: int) -> None:
         # Initial seq. length: 512
         self.model = Sequential(
-            Conv1d(in_channels, 64, kernel_size=5, bias=False),
-            BatchNorm1d(64),
-            ResidualBlock(64),  # 512 => 256
-            ResidualBlock(64),  # 256 => 128
-            ResidualBlock(64),  # 128 => 64
-            ResidualBlock(64),  # 64 => 32
-            Flatten(),
-            Dropout(0.3),
-            Linear(64 * 32, 64, bias=False),
-            BatchNorm1d(64),
-            ELU(),
-            Dropout(0.3),
-            Linear(64, num_classes),
+            WindowBlock(in_channels),
+            EpochBlock(256),
+            Linear(256, 256),
+            ReLU(),
+            Dropout(0.5),
+            Linear(256, num_classes),
         ).to(self.device)
 
     @staticmethod
