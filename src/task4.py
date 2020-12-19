@@ -8,7 +8,6 @@ import numpy as np
 import yaml
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
 from imblearn.over_sampling import RandomOverSampler
-from scipy.fft import fft
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import RobustScaler
@@ -265,18 +264,7 @@ def get_data(data_dir: str, features_dir: str, mode: str) -> CSVData:
     if eeg1 is None or eeg2 is None or emg is None:
         raise RuntimeError(f"There was a problem with reading the {mode} data")
 
-    processed_data = fft(eeg1[:, 1:])
-    processed_data = np.stack([processed_data.real, processed_data.imag], 1)
-
-    eeg2_fft = fft(eeg2[:, 1:])
-    processed_data = np.column_stack(
-        (processed_data, np.expand_dims(eeg2_fft.real, 1), np.expand_dims(eeg2_fft.imag, 1))
-    )
-
-    emg_fft = fft(emg[:, 1:])
-    processed_data = np.column_stack(
-        (processed_data, np.expand_dims(emg_fft.real, 1), np.expand_dims(emg_fft.imag, 1))
-    )
+    processed_data = np.stack([eeg1[:, 1:], eeg2[:, 1:], emg[:, 1:]], 1)
 
     np.save(features_path, processed_data)
     return processed_data
