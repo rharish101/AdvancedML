@@ -116,10 +116,7 @@ def __main(args: Namespace) -> None:
         os.makedirs(args.features_dir)
 
     X_train = get_data(args.data_dir, args.features_dir, "train")
-
-    scaler = TemporalScaler()
-    X_train = scaler.fit_transform(X_train)
-
+    X_train = normalize(X_train, 3)
     if args.model != "nn":
         X_train = X_train.reshape(X_train.shape[0], -1)
 
@@ -202,7 +199,7 @@ def __main(args: Namespace) -> None:
 
     elif args.mode == "final":
         X_test = get_data(args.data_dir, args.features_dir, "test")
-        X_test = scaler.transform(X_test)
+        X_test = normalize(X_test, 2)
         if args.model != "nn":
             X_test = X_test.reshape(X_test.shape[0], -1)
         if args.select_features:
@@ -230,6 +227,24 @@ def __main(args: Namespace) -> None:
 
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
+
+
+def normalize(X: CSVData, subjects: int) -> CSVData:
+    """Normalize the data per-subject.
+
+    This assumes that each subject's data is arranged contiguously.
+    """
+    if len(X) % subjects != 0:
+        raise ValueError("Number of data points not divisble by number of subjects")
+
+    per_sub_size = len(X) // subjects
+    parts = []
+
+    for i in range(0, len(X), per_sub_size):
+        scaler = TemporalScaler()
+        parts.append(scaler.fit_transform(X[i : i + per_sub_size]))
+
+    return np.concatenate(parts, 0)
 
 
 def get_data(data_dir: str, features_dir: str, mode: str) -> CSVData:
