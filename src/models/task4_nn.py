@@ -168,7 +168,7 @@ class NN(BaseClassifier):
         num_classes = len(class_count)
         in_channels = X.shape[1]
         self.classes_ = np.arange(num_classes)
-        total_batches = np.ceil(len(X) / self.batch_size)
+        total_batches = int(np.ceil(len(X) / self.batch_size))
 
         self._init_model(in_channels, num_classes)
 
@@ -195,7 +195,7 @@ class NN(BaseClassifier):
             for i, (batch_X, batch_y) in tqdm(
                 enumerate(self._gen_batches(X, y, np_rng), 1),
                 desc=f"Epoch {ep}/{self.epochs}",
-                total=int(total_batches),
+                total=total_batches,
             ):
                 optim.zero_grad()
                 loss = loss_func(self.model(batch_X), batch_y)
@@ -226,10 +226,11 @@ class NN(BaseClassifier):
 
         pred = []
         softmax_func = Softmax(dim=-1)
+        total_batches = int(np.ceil(len(X) / self.batch_size))
 
         self.model.eval()
         with torch.no_grad():
-            for batch_X in self._gen_batches(X):
+            for batch_X in tqdm(self._gen_batches(X), desc="Prediction", total=total_batches):
                 pred.append(softmax_func(self.model(batch_X)).cpu().numpy())
 
         return np.concatenate(pred, axis=0)
