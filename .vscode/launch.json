@@ -15,6 +15,6 @@
       "env": {},
       "envFile": "${workspaceRoot}/.env",
       "justMyCode": false,
-      "args": ["--model", "nn", "--visual", "eval"]
+      "args": ["--model", "nn", "--augment", "eval"]
   }],
 }

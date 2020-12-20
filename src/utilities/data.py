@@ -182,7 +182,7 @@ def visualize_data(data: CSVData, ids: List[str], name: str, log_directory: str 
 
 
 def run_data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> None:
-    """Run basic diagnorstics on the given data.
+    """Run basic diagnostics on the given data.
 
     Parameters
     ----------
@@ -205,3 +205,42 @@ def run_data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> N
 
     # Create a TensorBoard projector to visualize data
     visualize_data(data[:, 1:], data[:, 0].astype(int), "input_data")
+
+
+def augment(data: CSVData, labels: CSVData, subjects: int) -> Tuple[CSVData, CSVData]:
+    """Augment sequential data.
+
+    Augment sequential data by concatenating the second half of the previous row with the first
+    half of the next row.
+
+    Parameters
+    ----------
+    data (CSVData):
+        Data to augment in the form of a numpy array shape of (epochs, data points in the epoch)
+
+    Returns
+    -------
+    CSVData
+        Augmented data following the algorithm in the description above
+    """
+    if len(data) % subjects != 0:
+        raise ValueError("Number of data points not divisble by number of subjects")
+
+    samples_per_subject = len(data) // subjects
+    parts = []
+    half_index = data.shape[1] // 2
+
+    # Augment data by subject
+    for i in range(0, len(data), samples_per_subject):
+        augmented = []
+
+        for j in range(i, i + samples_per_subject):
+            augmented.append(data[j])
+
+            if j < len(data) - 1 and labels[j] == labels[j + 1] and labels[j] == 2:
+                augmented.append(np.concatenate([data[j, half_index:], data[j + 1, :half_index]]))
+                labels = np.insert(labels, j + 1, labels[j])
+
+        parts.append(augmented)
+
+    return np.concatenate(parts, 0), labels
