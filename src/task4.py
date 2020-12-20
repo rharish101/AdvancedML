@@ -26,6 +26,7 @@ SUFFIX_EEG1_DATA_CSV: Final = "_eeg1.csv"
 SUFFIX_EEG2_DATA_CSV: Final = "_eeg2.csv"
 SUFFIX_EMG_DATA_CSV: Final = "_emg.csv"
 SUFFIX_FEAT_NPY: Final = "-features.npy"
+SUFFIX_LBL_NPY: Final = "-labels.npy"
 
 TRAINING_LABELS_CSV: Final = "train_labels.csv"
 
@@ -115,15 +116,8 @@ def __main(args: Namespace) -> None:
     if not os.path.exists(args.features_dir):
         os.makedirs(args.features_dir)
 
-    # Read in labels
-    Y_train, _ = read_csv(os.path.join(args.data_dir, TRAINING_LABELS_CSV))
-    if Y_train is None:
-        raise RuntimeError("There was a problem with reading CSV data")
-    # Remove training IDs, as they are in sorted order for training data.
-    # Also make classes start from 0, as they start from 1.
-    Y_train = Y_train[:, 1] - 1
-
-    X_train, Y_train = get_data(args.data_dir, args.features_dir, "train", args.augment, 3, Y_train)
+    X_train, Y_train = get_data(args.data_dir, args.features_dir, "train", args.augment, 3)
+    assert Y_train is not None
     X_train = normalize(X_train, 3)
     if args.model != "nn":
         X_train = X_train.reshape(X_train.shape[0], -1)
@@ -253,24 +247,37 @@ def get_data(
     mode: str,
     is_augment: bool = False,
     subjects: int = 3,
-    labels: CSVData = None,
-) -> Tuple[CSVData, CSVData]:
+) -> Tuple[CSVData, Optional[CSVData]]:
     """Get the time-series data representing waves preprocessed using Fast Fourier Transform."""
     if mode not in {"train", "test"}:
         raise ValueError(f"Invalid mode: {mode}")
 
     features_path = os.path.join(features_dir, mode + SUFFIX_FEAT_NPY)
+    labels_path = os.path.join(features_dir, mode + SUFFIX_LBL_NPY)
     if os.path.exists(features_path):
-        print(f'Loading {mode} features from "{features_path}"')
-        return np.load(features_path)
+        if mode == "train" and os.path.exists(labels_path):
+            print(f'Loading {mode} features and labels from "{features_dir}"')
+            return np.load(features_path), np.load(labels_path)
+        elif mode == "test":
+            print(f'Loading {mode} features from "{features_dir}"')
+            return np.load(features_path), None
 
     # Read in data
     eeg1, _ = read_csv(os.path.join(data_dir, mode + SUFFIX_EEG1_DATA_CSV))
     eeg2, _ = read_csv(os.path.join(data_dir, mode + SUFFIX_EEG2_DATA_CSV))
     emg, _ = read_csv(os.path.join(data_dir, mode + SUFFIX_EMG_DATA_CSV))
-
     if eeg1 is None or eeg2 is None or emg is None:
         raise RuntimeError(f"There was a problem with reading the {mode} data")
+
+    # Read in labels
+    if mode == "train":
+        labels, _ = read_csv(os.path.join(data_dir, TRAINING_LABELS_CSV))
+        if labels is None:
+            raise RuntimeError("There was a problem with reading CSV data")
+        # Make classes start from 0, as they start from 1
+        labels = labels[:, 1] - 1
+    else:
+        labels = None
 
     if is_augment:
         if labels is None:
@@ -294,6 +301,8 @@ def get_data(
     )
 
     np.save(features_path, processed_data)
+    if labels is not None:
+        np.save(labels_path, labels)
     return processed_data, labels
 
 
