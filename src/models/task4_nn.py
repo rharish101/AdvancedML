@@ -77,7 +77,7 @@ class PositionalEncoding(Module):
     """
 
     def __init__(self, d_model, dropout=0.1, max_len=32):
-        super(PositionalEncoding, self).__init__()
+        super().__init__()
         self.dropout = Dropout(p=dropout)
 
         pe = torch.zeros(max_len, d_model)
@@ -106,16 +106,16 @@ class EpochBlock(Module):
     def __init__(self, channels: int):
         """Initialize the layers."""
         super().__init__()
-        self.pos_encoder = PositionalEncoding(channels)
-        self.attention_1 = TransformerEncoderLayer(channels, 1, dim_feedforward=channels)
-        self.attention_2 = TransformerEncoderLayer(channels, 1, dim_feedforward=channels)
+        self.layers = Sequential(
+            PositionalEncoding(channels),
+            TransformerEncoderLayer(channels, 1, dim_feedforward=channels),
+            TransformerEncoderLayer(channels, 1, dim_feedforward=channels),
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         """Return the output."""
-        x = self.pos_encoder(x)
-        x = self.attention_1(x)
-        x = self.attention_2(x)
-        x = x.mean(0)  # GlobalAvgPool
+        x = self.layers(x)
+        x = x.mean(0)  # GlobalAvgPool over the time axis (LxNxC)
         return x
 
 
