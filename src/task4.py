@@ -458,10 +458,9 @@ if __name__ == "__main__":
         help="the path to the YAML config for the hyper-parameters",
     )
     parser.add_argument(
-        "--keep-features",
-        dest="select_features",
-        action="store_false",
-        help="whether to skip training the most optimal features",
+        "--select-features",
+        action="store_true",
+        help="whether to train the most optimal features",
     )
     parser.add_argument(
         "--selected-features-path",
