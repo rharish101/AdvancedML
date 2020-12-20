@@ -1,7 +1,7 @@
 """Neural network model for task 4."""
 import os
 from datetime import datetime
-from typing import Iterator, Optional, Tuple, Union
+from typing import Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -119,6 +119,35 @@ class EpochBlock(Module):
         return x
 
 
+class Model(Module):
+    """The combined model for sleep classification.
+
+    This model is inspired by: https://www.mdpi.com/1660-4601/17/11/4152
+    """
+
+    def __init__(self, in_channels: int, num_classes: int):
+        """Initialize the layers."""
+        super().__init__()
+        self.intra_block = Sequential(WindowBlock(in_channels), EpochBlock(256))
+        self.inter_block = Sequential(
+            EpochBlock(256),
+            Linear(256, 256),
+            ReLU(),
+            Dropout(0.5),
+            Linear(256, num_classes),
+        )
+
+    def forward(self, xs: List[Tensor]) -> Tensor:
+        """Return the output."""
+        # Concatenate along the batch axis for efficiency
+        x = torch.cat(xs, 0)
+        x = self.intra_block(x)
+        # Assuming all elements of xs are the same shape
+        x = x.reshape(len(xs), -1, *list(x.shape[1:]))  # (3*N)xC => 3xNxC
+        x = self.inter_block(x)
+        return x
+
+
 class NN(BaseClassifier):
     """The neural network model for time-series classification."""
 
@@ -164,19 +193,39 @@ class NN(BaseClassifier):
 
     def _init_model(self, in_channels: int, num_classes: int) -> None:
         # Initial seq. length: 512
-        self.model = Sequential(
-            WindowBlock(in_channels),
-            EpochBlock(256),
-            Linear(256, 256),
-            ReLU(),
-            Dropout(0.5),
-            Linear(256, num_classes),
-        ).to(self.device)
+        self.model = Model(in_channels, num_classes).to(self.device)
 
     @staticmethod
     def _timestamp_dir(base_dir: str) -> str:
         """Add a time-stamped directory after the base directory."""
         return os.path.join(base_dir, datetime.now().isoformat().replace(":", ""))
+
+    def _gen_batches_subject(
+        self,
+        X: CSVData,
+        y: Optional[CSVData] = None,
+        rng: Optional[np.random.Generator] = None,
+    ) -> Iterator[Union[Tensor, Tuple[Tensor, Tensor]]]:
+        """Yield data elements for one subject as batches."""
+        indices = np.arange(len(X))
+        if rng is not None:
+            rng.shuffle(indices)
+
+        for i in range(0, len(indices), self.batch_size):
+            batch_idx_curr = indices[i : i + self.batch_size]
+            batch_idx_prev = np.maximum(batch_idx_curr - 1, 0)
+            batch_idx_next = np.minimum(batch_idx_curr + 1, len(indices) - 1)
+
+            batch_X_prev = torch.from_numpy(X[batch_idx_prev]).to(self.device)
+            batch_X_curr = torch.from_numpy(X[batch_idx_curr]).to(self.device)
+            batch_X_next = torch.from_numpy(X[batch_idx_next]).to(self.device)
+            batch_X = [batch_X_prev, batch_X_curr, batch_X_next]
+
+            if y is None:
+                yield batch_X
+            else:
+                batch_y = torch.from_numpy(y[batch_idx_curr]).to(self.device)
+                yield batch_X, batch_y
 
     def _gen_batches(
         self,
@@ -185,36 +234,35 @@ class NN(BaseClassifier):
         rng: Optional[np.random.Generator] = None,
     ) -> Iterator[Union[Tensor, Tuple[Tensor, Tensor]]]:
         """Yield data elements as batches."""
-        indices = np.arange(len(X))
-        if rng is not None:
-            rng.shuffle(indices)
+        if y is None:
+            y = [None] * len(X)
+        else:
+            y = y.reshape(len(X), -1)
 
-        for i in range(0, len(indices), self.batch_size):
-            batch_indices = indices[i : i + self.batch_size]
-            batch_X = torch.from_numpy(X[batch_indices]).to(self.device)
+        for Xi, yi in zip(X, y):
+            for data in self._gen_batches_subject(Xi, yi, rng):
+                yield data
 
-            if y is None:
-                yield batch_X
-            else:
-                batch_y = torch.from_numpy(y[batch_indices]).to(self.device)
-                yield batch_X, batch_y
+    def _get_total_batches(self, input_shape: Tuple[int, int, int, int]) -> int:
+        """Get the total number of batches that will be generated for this input."""
+        return int(np.ceil(input_shape[1] / self.batch_size)) * input_shape[0]
 
     def fit(self, X: CSVData, y: CSVData) -> None:
         """Initialize and train the model.
 
         Parameters
         ----------
-        X: The 3D input data
-        y: The corresponding output integer labels
+        X: The 4D SxNxCxL input data of per-subject 3D NxCxL data
+        y: The corresponding 1D output integer labels
         """
         X = X.astype(np.float32)
         y = y.astype(np.int64)
 
         class_count = np.bincount(y.astype(np.int64))
         num_classes = len(class_count)
-        in_channels = X.shape[1]
+        in_channels = X.shape[2]
         self.classes_ = np.arange(num_classes)
-        total_batches = int(np.ceil(len(X) / self.batch_size))
+        total_batches = self._get_total_batches(X.shape)
 
         self._init_model(in_channels, num_classes)
 
@@ -261,7 +309,7 @@ class NN(BaseClassifier):
 
         Parameters
         ----------
-        X: The 3D input data
+        X: The 4D SxNxCxL input data of per-subject 3D NxCxL data
 
         Returns
         -------
@@ -271,7 +319,7 @@ class NN(BaseClassifier):
 
         pred = []
         softmax_func = Softmax(dim=-1)
-        total_batches = int(np.ceil(len(X) / self.batch_size))
+        total_batches = self._get_total_batches(X.shape)
 
         self.model.eval()
         with torch.no_grad():
@@ -285,7 +333,7 @@ class NN(BaseClassifier):
 
         Parameters
         ----------
-        X: The 3D input data
+        X: The 4D SxNxCxL input data of per-subject 3D NxCxL data
 
         Returns
         -------
