@@ -18,7 +18,7 @@ from xgboost import XGBClassifier
 
 from models.task4_nn import NN
 from typings import BaseClassifier, BaseTransformer, CSVData
-from utilities.data import read_csv
+from utilities.data import augment, read_csv
 from utilities.model import evaluate_model_task4, feature_selection, finalize_model, visualize_model
 
 # Suffixes will be prefixed with either "train" or "test"
@@ -115,11 +115,6 @@ def __main(args: Namespace) -> None:
     if not os.path.exists(args.features_dir):
         os.makedirs(args.features_dir)
 
-    X_train = get_data(args.data_dir, args.features_dir, "train")
-    X_train = normalize(X_train, 3)
-    if args.model != "nn":
-        X_train = X_train.reshape(X_train.shape[0], -1)
-
     # Read in labels
     Y_train, _ = read_csv(os.path.join(args.data_dir, TRAINING_LABELS_CSV))
     if Y_train is None:
@@ -127,6 +122,11 @@ def __main(args: Namespace) -> None:
     # Remove training IDs, as they are in sorted order for training data.
     # Also make classes start from 0, as they start from 1.
     Y_train = Y_train[:, 1] - 1
+
+    X_train, Y_train = get_data(args.data_dir, args.features_dir, "train", args.augment, 3, Y_train)
+    X_train = normalize(X_train, 3)
+    if args.model != "nn":
+        X_train = X_train.reshape(X_train.shape[0], -1)
 
     # Load hyper-parameters, if a config exists
     with open(args.config, "r") as conf_file:
@@ -198,7 +198,7 @@ def __main(args: Namespace) -> None:
         print(f"Micro-average F1 validation score is: {val_score:.4f}")
 
     elif args.mode == "final":
-        X_test = get_data(args.data_dir, args.features_dir, "test")
+        X_test, _ = get_data(args.data_dir, args.features_dir, "test")
         X_test = normalize(X_test, 2)
         if args.model != "nn":
             X_test = X_test.reshape(X_test.shape[0], -1)
@@ -247,7 +247,14 @@ def normalize(X: CSVData, subjects: int) -> CSVData:
     return np.concatenate(parts, 0)
 
 
-def get_data(data_dir: str, features_dir: str, mode: str) -> CSVData:
+def get_data(
+    data_dir: str,
+    features_dir: str,
+    mode: str,
+    is_augment: bool = False,
+    subjects: int = 3,
+    labels: CSVData = None,
+) -> Tuple[CSVData, CSVData]:
     """Get the time-series data representing waves preprocessed using Fast Fourier Transform."""
     if mode not in {"train", "test"}:
         raise ValueError(f"Invalid mode: {mode}")
@@ -265,6 +272,14 @@ def get_data(data_dir: str, features_dir: str, mode: str) -> CSVData:
     if eeg1 is None or eeg2 is None or emg is None:
         raise RuntimeError(f"There was a problem with reading the {mode} data")
 
+    if is_augment:
+        if labels is None:
+            raise RuntimeError("Augmentation is enabled, but no labels were given")
+
+        eeg1, labels = augment(eeg1, labels, subjects)
+        eeg2, _ = augment(eeg2, labels, subjects)
+        emg, _ = augment(emg, labels, subjects)
+
     processed_data = fft(eeg1[:, 1:])
     processed_data = np.stack([processed_data.real, processed_data.imag], 1)
 
@@ -279,7 +294,7 @@ def get_data(data_dir: str, features_dir: str, mode: str) -> CSVData:
     )
 
     np.save(features_path, processed_data)
-    return processed_data
+    return processed_data, labels
 
 
 def choose_model(
@@ -481,6 +496,8 @@ if __name__ == "__main__":
         default="config/features-task4.txt",
         help="where the most optimal features are stored",
     )
+    parser.add_argument("--visual", action="store_true", help="enable model visualizations")
+    parser.add_argument("--augment", action="store_true", help="enable data augmentation")
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
 
     # Sub-parser for k-fold cross-validation
@@ -514,7 +531,6 @@ if __name__ == "__main__":
         default="dist/submission4.csv",
         help="the path by which to save the output CSV",
     )
-    parser.add_argument("--visual", action="store_true", help="enable model visualizations")
 
     # Sub-parser for hyper-param tuning
     tune_parser = subparsers.add_parser(
