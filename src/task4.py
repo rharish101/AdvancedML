@@ -8,7 +8,6 @@ import numpy as np
 import yaml
 from hyperopt import STATUS_FAIL, STATUS_OK, fmin, hp, tpe
 from imblearn.over_sampling import RandomOverSampler
-from scipy.fft import fft
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import RobustScaler
@@ -120,9 +119,9 @@ def __main(args: Namespace) -> None:
     assert Y_train is not None
     if args.augment is not None:
         X_train, Y_train = augment(X_train, Y_train, 3, factor=args.augment)
-    X_train = normalize(X_train, 3)
+    X_train = norm_reshape(X_train, 3)
     if args.model != "nn":
-        X_train = X_train.reshape(X_train.shape[0], -1)
+        X_train = X_train.reshape(X_train.shape[0] * X_train.shape[1], -1)
 
     # Load hyper-parameters, if a config exists
     with open(args.config, "r") as conf_file:
@@ -195,14 +194,16 @@ def __main(args: Namespace) -> None:
 
     elif args.mode == "final":
         X_test, _ = get_data(args.data_dir, args.features_dir, "test")
-        X_test = normalize(X_test, 2)
-        if args.model != "nn":
-            X_test = X_test.reshape(X_test.shape[0], -1)
-        if args.select_features:
-            X_test = X_test[:, selected]
+        X_test = norm_reshape(X_test, 2)
 
         # Assuming test IDs as in ascending order
-        test_ids = np.arange(len(X_test))
+        test_ids = np.arange(X_test.shape[0] * X_test.shape[1])
+
+        if args.model != "nn":
+            X_test = X_test.reshape(X_test.shape[0] * X_test.shape[1], -1)
+
+        if args.select_features:
+            X_test = X_test[:, selected]
 
         finalize_model(
             model,
@@ -225,10 +226,19 @@ def __main(args: Namespace) -> None:
         raise ValueError(f"Invalid mode: {args.mode}")
 
 
-def normalize(X: CSVData, subjects: int) -> CSVData:
-    """Normalize the data per-subject.
+def norm_reshape(X: CSVData, subjects: int) -> CSVData:
+    """Normalize the per-subject data and stack them.
 
     This assumes that each subject's data is arranged contiguously.
+
+    Parameters
+    ----------
+    X: The 3D (S*N)xCxL input data
+    subjects: The number of subjects in the data
+
+    Returns
+    -------
+    The 4D SxNxCxL data of per-subject normalized 3D NxCxL data
     """
     if len(X) % subjects != 0:
         raise ValueError("Number of data points not divisble by number of subjects")
@@ -240,7 +250,7 @@ def normalize(X: CSVData, subjects: int) -> CSVData:
         scaler = TemporalScaler()
         parts.append(scaler.fit_transform(X[i : i + per_sub_size]))
 
-    return np.concatenate(parts, 0)
+    return np.stack(parts, 0)
 
 
 def get_data(data_dir: str, features_dir: str, mode: str) -> Tuple[CSVData, Optional[CSVData]]:
@@ -275,18 +285,7 @@ def get_data(data_dir: str, features_dir: str, mode: str) -> Tuple[CSVData, Opti
     else:
         labels = None
 
-    processed_data = fft(eeg1[:, 1:])
-    processed_data = np.stack([processed_data.real, processed_data.imag], 1)
-
-    eeg2_fft = fft(eeg2[:, 1:])
-    processed_data = np.column_stack(
-        (processed_data, np.expand_dims(eeg2_fft.real, 1), np.expand_dims(eeg2_fft.imag, 1))
-    )
-
-    emg_fft = fft(emg[:, 1:])
-    processed_data = np.column_stack(
-        (processed_data, np.expand_dims(emg_fft.real, 1), np.expand_dims(emg_fft.imag, 1))
-    )
+    processed_data = np.stack([eeg1[:, 1:], eeg2[:, 1:], emg[:, 1:]], 1)
 
     np.save(features_path, processed_data)
     if labels is not None:
@@ -473,7 +472,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         choices=["xgb", "svm", "ensemble", "forest", "nn"],
-        default="xgb",
+        default="nn",
         help="the choice of model to train",
     )
     parser.add_argument(
@@ -483,10 +482,9 @@ if __name__ == "__main__":
         help="the path to the YAML config for the hyper-parameters",
     )
     parser.add_argument(
-        "--keep-features",
-        dest="select_features",
-        action="store_false",
-        help="whether to skip training the most optimal features",
+        "--select-features",
+        action="store_true",
+        help="whether to train the most optimal features",
     )
     parser.add_argument(
         "--selected-features-path",

@@ -58,18 +58,21 @@ def evaluate_model_task4(
     train_score = 0
     val_score = 0
 
-    X_train = np.vstack([np.split(X_train, k)])
-    Y_train = np.vstack([np.split(Y_train, k)])
+    if len(X_train.shape) != 4:
+        X_train = np.stack(np.split(X_train, k))  # (S*N)x(C*L) => SxNx(C*L)
+    Y_train = np.stack(np.split(Y_train, k))  # (S*N) => SxN
 
     for test_index in range(k):
-        X_train_cv, X_test_cv = (
-            np.concatenate(([X_train[(test_index + i) % k] for i in range(1, k)])),
-            X_train[test_index],
-        )
-        Y_train_cv, Y_test_cv = (
-            np.concatenate(([Y_train[(test_index + i) % k] for i in range(1, k)])),
-            Y_train[test_index],
-        )
+        X_train_cv = X_train[np.arange(k) != test_index]
+        Y_train_cv = np.concatenate(Y_train[np.arange(k) != test_index])  # (S-1)xN => ((S-1)*N)
+
+        X_test_cv = X_train[test_index]
+        Y_test_cv = Y_train[test_index]
+
+        if len(X_train.shape) == 4:
+            X_test_cv = np.expand_dims(X_test_cv, 0)  # NxCxL => 1xNxCxL
+        else:
+            X_train_cv = np.concatenate(X_train_cv)  # (S-1)xNx(C*L) => ((S-1)*N)x(C*L)
 
         if outlier_detection is not None:
             outliers = outlier_detection.fit_predict(X_train_cv)
