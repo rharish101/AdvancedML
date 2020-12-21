@@ -115,8 +115,10 @@ def __main(args: Namespace) -> None:
     if not os.path.exists(args.features_dir):
         os.makedirs(args.features_dir)
 
-    X_train, Y_train = get_data(args.data_dir, args.features_dir, "train", args.augment, 3)
+    X_train, Y_train = get_data(args.data_dir, args.features_dir, "train")
     assert Y_train is not None
+    if args.augment is not None:
+        X_train, Y_train = augment(X_train, Y_train, 3, factor=args.augment)
     X_train = norm_reshape(X_train, 3)
     if args.model != "nn":
         X_train = X_train.reshape(X_train.shape[0] * X_train.shape[1], -1)
@@ -251,13 +253,7 @@ def norm_reshape(X: CSVData, subjects: int) -> CSVData:
     return np.stack(parts, 0)
 
 
-def get_data(
-    data_dir: str,
-    features_dir: str,
-    mode: str,
-    is_augment: bool = False,
-    subjects: int = 3,
-) -> Tuple[CSVData, Optional[CSVData]]:
+def get_data(data_dir: str, features_dir: str, mode: str) -> Tuple[CSVData, Optional[CSVData]]:
     """Get the time-series data representing waves preprocessed using Fast Fourier Transform."""
     if mode not in {"train", "test"}:
         raise ValueError(f"Invalid mode: {mode}")
@@ -289,19 +285,12 @@ def get_data(
     else:
         labels = None
 
-    if is_augment:
-        if labels is None:
-            raise RuntimeError("Augmentation is enabled, but no labels were given")
-
-        eeg1, labels = augment(eeg1, labels, subjects)
-        eeg2, _ = augment(eeg2, labels, subjects)
-        emg, _ = augment(emg, labels, subjects)
-
     processed_data = np.stack([eeg1[:, 1:], eeg2[:, 1:], emg[:, 1:]], 1)
 
     np.save(features_path, processed_data)
     if labels is not None:
         np.save(labels_path, labels)
+
     return processed_data, labels
 
 
@@ -504,7 +493,7 @@ if __name__ == "__main__":
         help="where the most optimal features are stored",
     )
     parser.add_argument("--visual", action="store_true", help="enable model visualizations")
-    parser.add_argument("--augment", action="store_true", help="enable data augmentation")
+    parser.add_argument("--augment", type=int, help="augmentation factor for the minority class")
     subparsers = parser.add_subparsers(dest="mode", help="the mode of operation")
 
     # Sub-parser for k-fold cross-validation

@@ -207,7 +207,9 @@ def run_data_diagnostics(data: CSVData, labels: CSVData, header: CSVHeader) -> N
     visualize_data(data[:, 1:], data[:, 0].astype(int), "input_data")
 
 
-def augment(data: CSVData, labels: CSVData, subjects: int) -> Tuple[CSVData, CSVData]:
+def augment(
+    data: CSVData, labels: CSVData, subjects: int, factor: int = 4
+) -> Tuple[CSVData, CSVData]:
     """Augment sequential data.
 
     Augment sequential data by concatenating the second half of the previous row with the first
@@ -215,32 +217,40 @@ def augment(data: CSVData, labels: CSVData, subjects: int) -> Tuple[CSVData, CSV
 
     Parameters
     ----------
-    data (CSVData):
-        Data to augment in the form of a numpy array shape of (epochs, data points in the epoch)
+    data: The 3D NxCxL input data to augment
+    labels: The corresponding 1D output integer labels
+    subjects: The number of subjects in the data
+    factor: The augmentation factor for the minority class (class 3 in the dataset)
 
     Returns
     -------
-    CSVData
-        Augmented data following the algorithm in the description above
+    The augmented data (of the same shape as the input)
+    The corresponding 1D labels of the augmented data
     """
     if len(data) % subjects != 0:
         raise ValueError("Number of data points not divisble by number of subjects")
 
     samples_per_subject = len(data) // subjects
-    parts = []
-    half_index = data.shape[1] // 2
+    parts_data = []
+    parts_labels = []
 
     # Augment data by subject
     for i in range(0, len(data), samples_per_subject):
-        augmented = []
+        augmented_data = list(data[i : i + samples_per_subject])
+        augmented_labels = list(labels[i : i + samples_per_subject])
 
-        for j in range(i, i + samples_per_subject):
-            augmented.append(data[j])
+        for j in range(i, i + samples_per_subject - 1):
+            if labels[j] == labels[j + 1] and labels[j] == 2:
+                new_data = np.concatenate([data[j], data[j + 1]], 1)
+                for k in np.linspace(0, data.shape[2], factor + 1)[1:-1]:
+                    augmented_data.append(new_data[:, int(k) : int(k) + data.shape[2]])
+                    augmented_labels.append(labels[j])
 
-            if j < len(data) - 1 and labels[j] == labels[j + 1] and labels[j] == 2:
-                augmented.append(np.concatenate([data[j, half_index:], data[j + 1, :half_index]]))
-                labels = np.insert(labels, j + 1, labels[j])
+        parts_data.append(np.stack(augmented_data))
+        parts_labels.append(np.array(augmented_labels))
 
-        parts.append(augmented)
-
-    return np.concatenate(parts, 0), labels
+    # We need to ensure that each subject has equal elements
+    to_keep = min([len(arr) for arr in parts_labels])
+    total_data = np.concatenate([arr[:to_keep] for arr in parts_data])
+    total_labels = np.concatenate([arr[:to_keep] for arr in parts_labels])
+    return total_data, total_labels
