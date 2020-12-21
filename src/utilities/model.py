@@ -89,10 +89,10 @@ def evaluate_model_task4(
             pass
 
         train_pred = model.predict(X_train_cv)
-        train_score += f1_score(Y_train_cv, train_pred, average="micro")
+        train_score += balanced_accuracy_score(Y_train_cv, train_pred)
 
         test_pred = model.predict(X_test_cv)
-        val_score += f1_score(Y_test_cv, test_pred, average="micro")
+        val_score += balanced_accuracy_score(Y_test_cv, test_pred)
 
         if visualize:
             create_visualization(model, X_train_cv, Y_train_cv, "Training Metrics")
