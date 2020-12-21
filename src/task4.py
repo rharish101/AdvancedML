@@ -190,8 +190,8 @@ def __main(args: Namespace) -> None:
             visualize=args.visual,
         )
 
-        print(f"Micro-average F1 training score is: {train_score:.4f}")
-        print(f"Micro-average F1 validation score is: {val_score:.4f}")
+        print(f"Balanced training accuracy is: {train_score:.4f}")
+        print(f"Balanced validation accuracy is: {val_score:.4f}")
 
     elif args.mode == "final":
         X_test, _ = get_data(args.data_dir, args.features_dir, "test")
